@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Scan {
+  id          String   @id @default(cuid())
+  url         String
+  score       Int
+  riskLevel   String
+  headers     String   // JSON string of header results
+  ssl         String   // JSON string of SSL results
+  ports       String   // JSON string of port results
+  vulnerabilities String // JSON string of vulnerabilities
+  suggestions String   // JSON string of suggestions
+  createdAt   DateTime @default(now())
+}
