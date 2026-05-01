@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppView } from '@/lib/store';
 
@@ -12,6 +12,15 @@ function useHasMounted(): boolean {
   );
 }
 
+// Seeded PRNG for deterministic values (avoids hydration mismatch)
+function seededRandom(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
 interface SecurityBackground3DProps {
   view: AppView;
 }
@@ -20,6 +29,19 @@ interface SecurityBackground3DProps {
    AUTH BACKGROUND — Giant rotating shield + lock matrix
    ============================================================ */
 function AuthBackground() {
+  // Pre-generate lock positions deterministically
+  const locks = useMemo(() => {
+    const rand = seededRandom(101);
+    return Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      left: 8 + (i % 5) * 20 + rand() * 6,
+      top: 5 + Math.floor(i / 5) * 16 + rand() * 4,
+      duration1: 6 + (i % 5) * 0.5,
+      duration2: 20 + (i % 5) * 2,
+      duration3: 4,
+    }));
+  }, []);
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
       {/* Giant rotating shield center */}
@@ -54,58 +76,28 @@ function AuthBackground() {
       </div>
 
       {/* Lock matrix - rows of floating locks */}
-      {Array.from({ length: 6 }).map((_, row) =>
-        Array.from({ length: 5 }).map((_, col) => (
-          <motion.div
-            key={`lock-${row}-${col}`}
-            className="absolute"
-            style={{
-              left: `${10 + col * 20}%`,
-              top: `${5 + row * 16}%`,
-            }}
-            animate={{
-              y: [0, -15 - (row % 3) * 5, 0],
-              rotateY: [0, 180, 360],
-              opacity: [0.03, 0.06, 0.03],
-            }}
-            transition={{
-              y: { duration: 6 + row * 0.5, repeat: Infinity, ease: 'easeInOut', delay: col * 0.3 },
-              rotateY: { duration: 20 + col * 2, repeat: Infinity, ease: 'linear' },
-              opacity: { duration: 4, repeat: Infinity, ease: 'easeInOut', delay: (row + col) * 0.2 },
-            }}
-          >
-            <svg width="40" height="50" viewBox="0 0 24 30" fill="none" className="opacity-40">
-              <rect x="3" y="14" width="18" height="12" rx="2" stroke="#3B82F6" strokeWidth="1" fill="rgba(59,130,246,0.1)" />
-              <path d="M8 14V10a4 4 0 018 0v4" stroke="#22D3EE" strokeWidth="1" fill="none" />
-            </svg>
-          </motion.div>
-        ))
-      )}
-
-      {/* Circuit lines */}
-      <svg className="absolute inset-0 w-full h-full opacity-[0.04]">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <motion.line
-            key={`circuit-${i}`}
-            x1={`${i * 9}%`}
-            y1="0%"
-            x2={`${i * 9 + 3}%`}
-            y2="100%"
-            stroke="#22D3EE"
-            strokeWidth="0.5"
-            animate={{
-              opacity: [0.3, 0.8, 0.3],
-              strokeWidth: ['0.5', '1.5', '0.5'],
-            }}
-            transition={{
-              duration: 3 + i * 0.3,
-              repeat: Infinity,
-              ease: 'easeInOut',
-              delay: i * 0.2,
-            }}
-          />
-        ))}
-      </svg>
+      {locks.map((lock) => (
+        <motion.div
+          key={`lock-${lock.id}`}
+          className="absolute"
+          style={{ left: `${lock.left}%`, top: `${lock.top}%` }}
+          animate={{
+            y: [0, -15 - (lock.id % 3) * 5, 0],
+            rotateY: [0, 180, 360],
+            opacity: [0.03, 0.06, 0.03],
+          }}
+          transition={{
+            y: { duration: lock.duration1, repeat: Infinity, ease: 'easeInOut', delay: (lock.id % 5) * 0.3 },
+            rotateY: { duration: lock.duration2, repeat: Infinity, ease: 'linear' },
+            opacity: { duration: lock.duration3, repeat: Infinity, ease: 'easeInOut', delay: lock.id * 0.2 },
+          }}
+        >
+          <svg width="40" height="50" viewBox="0 0 24 30" fill="none" className="opacity-40">
+            <rect x="3" y="14" width="18" height="12" rx="2" stroke="#3B82F6" strokeWidth="1" fill="rgba(59,130,246,0.1)" />
+            <path d="M8 14V10a4 4 0 018 0v4" stroke="#22D3EE" strokeWidth="1" fill="none" />
+          </svg>
+        </motion.div>
+      ))}
 
       {/* Pulsing security rings */}
       {[0, 1, 2].map((i) => (
@@ -118,18 +110,13 @@ function AuthBackground() {
             opacity: [0.05, 0.12, 0.05],
             rotateX: [0, 30, 0],
           }}
-          transition={{
-            duration: 5 + i,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.8,
-          }}
+          transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.8 }}
         />
       ))}
 
       {/* Grid overlay */}
       <div className="absolute inset-0 opacity-[0.02]" style={{
-        backgroundImage: `linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)`,
+        backgroundImage: 'linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)',
         backgroundSize: '80px 80px',
       }} />
     </div>
@@ -140,18 +127,33 @@ function AuthBackground() {
    LANDING BACKGROUND — 3D globe network with data nodes
    ============================================================ */
 function LandingBackground() {
-  // Create network nodes in a spherical pattern
-  const nodes = Array.from({ length: 20 }, (_, i) => {
-    const phi = Math.acos(-1 + (2 * i) / 20);
-    const theta = Math.sqrt(20 * Math.PI) * phi;
-    const r = 280;
-    return {
-      id: i,
-      x: r * Math.cos(theta) * Math.sin(phi),
-      y: r * Math.sin(theta) * Math.sin(phi),
-      z: r * Math.cos(phi),
-    };
-  });
+  const nodes = useMemo(() => {
+    return Array.from({ length: 20 }, (_, i) => {
+      const phi = Math.acos(-1 + (2 * i) / 20);
+      const theta = Math.sqrt(20 * Math.PI) * phi;
+      const r = 280;
+      return {
+        id: i,
+        x: r * Math.cos(theta) * Math.sin(phi),
+        y: r * Math.sin(theta) * Math.sin(phi),
+        z: r * Math.cos(phi),
+      };
+    });
+  }, []);
+
+  // Pre-calculate connection line positions
+  const connections = useMemo(() => {
+    return nodes.slice(0, 10).map((node, i) => {
+      const next = nodes[(i + 1) % 10];
+      return {
+        id: i,
+        x1: 300 + node.x * 0.5,
+        y1: 300 + node.y * 0.5,
+        x2: 300 + next.x * 0.5,
+        y2: 300 + next.y * 0.5,
+      };
+    });
+  }, [nodes]);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -202,24 +204,19 @@ function LandingBackground() {
             />
           ))}
 
-          {/* Connection lines between some nodes */}
+          {/* Connection lines (static SVG lines, no framer-motion on SVG elements) */}
           <svg width="600" height="600" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20">
-            {nodes.slice(0, 10).map((node, i) => {
-              const next = nodes[(i + 1) % 10];
-              return (
-                <motion.line
-                  key={`conn-${i}`}
-                  x1={300 + node.x * 0.5}
-                  y1={300 + node.y * 0.5}
-                  x2={300 + next.x * 0.5}
-                  y2={300 + next.y * 0.5}
-                  stroke="#3B82F6"
-                  strokeWidth="0.5"
-                  animate={{ opacity: [0.1, 0.4, 0.1] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
-                />
-              );
-            })}
+            {connections.map((conn) => (
+              <line
+                key={`conn-${conn.id}`}
+                x1={conn.x1}
+                y1={conn.y1}
+                x2={conn.x2}
+                y2={conn.y2}
+                stroke="#3B82F6"
+                strokeWidth="0.5"
+              />
+            ))}
           </svg>
         </motion.div>
       </div>
@@ -240,16 +237,11 @@ function LandingBackground() {
             y: [0, -50 + i * 10, 0],
             opacity: [0, 0.6, 0],
           }}
-          transition={{
-            duration: 6 + i,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.7,
-          }}
+          transition={{ duration: 6 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.7 }}
         />
       ))}
 
-      {/* Hexagonal grid overlay */}
+      {/* Hexagonal grid overlay (static SVG) */}
       <svg className="absolute inset-0 w-full h-full opacity-[0.03]">
         <defs>
           <pattern id="hexGrid" width="60" height="52" patternUnits="userSpaceOnUse">
@@ -288,6 +280,16 @@ function LandingBackground() {
    LOADING BACKGROUND — 3D Radar scanner + data streams
    ============================================================ */
 function LoadingBackground() {
+  // Pre-generate binary streams deterministically
+  const streams = useMemo(() => {
+    const rand = seededRandom(42);
+    return Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      left: 5 + i * 10,
+      text: Array.from({ length: 40 }, () => rand() > 0.5 ? '1' : '0').join(' '),
+    }));
+  }, []);
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
       {/* Giant radar scanner center */}
@@ -306,10 +308,7 @@ function LoadingBackground() {
                 height: 120 + i * 100,
                 borderColor: `rgba(34, 211, 238, ${0.08 - i * 0.01})`,
               }}
-              animate={{
-                opacity: [0.3, 0.6, 0.3],
-                scale: [1, 1.02, 1],
-              }}
+              animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.02, 1] }}
               transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
             />
           ))}
@@ -330,7 +329,6 @@ function LoadingBackground() {
                 boxShadow: '0 0 20px rgba(34, 211, 238, 0.3)',
               }}
             />
-            {/* Sweep glow cone */}
             <div
               className="absolute top-1/2 left-1/2 origin-left"
               style={{
@@ -355,28 +353,26 @@ function LoadingBackground() {
         </motion.div>
       </div>
 
-      {/* Data streams - vertical falling binary/data */}
-      {Array.from({ length: 10 }).map((_, i) => (
+      {/* Data streams - vertical falling binary (deterministic) */}
+      {streams.map((stream) => (
         <motion.div
-          key={`stream-${i}`}
+          key={`stream-${stream.id}`}
           className="absolute font-mono text-xs text-cyber-cyan/[0.07]"
           style={{
-            left: `${5 + i * 10}%`,
+            left: `${stream.left}%`,
             top: 0,
             writingMode: 'vertical-lr',
             letterSpacing: '0.3em',
           }}
           animate={{ y: ['0vh', '100vh'] }}
           transition={{
-            duration: 8 + i * 0.5,
+            duration: 8 + stream.id * 0.5,
             repeat: Infinity,
             ease: 'linear',
-            delay: i * 0.6,
+            delay: stream.id * 0.6,
           }}
         >
-          {Array.from({ length: 40 }, () =>
-            Math.random() > 0.5 ? '1' : '0'
-          ).join(' ')}
+          {stream.text}
         </motion.div>
       ))}
 
@@ -385,16 +381,8 @@ function LoadingBackground() {
         <motion.div
           key={`pulse-ring-${i}`}
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyber-cyan/30"
-          animate={{
-            scale: [0.5, 3],
-            opacity: [0.4, 0],
-          }}
-          transition={{
-            duration: 3,
-            repeat: Infinity,
-            ease: 'easeOut',
-            delay: i * 1,
-          }}
+          animate={{ scale: [0.5, 3], opacity: [0.4, 0] }}
+          transition={{ duration: 3, repeat: Infinity, ease: 'easeOut', delay: i * 1 }}
         />
       ))}
 
@@ -403,14 +391,8 @@ function LoadingBackground() {
         <motion.div
           key={`target-${i}`}
           className="absolute"
-          style={{
-            left: `${15 + i * 18}%`,
-            top: `${20 + (i * 13) % 60}%`,
-          }}
-          animate={{
-            scale: [0.8, 1.1, 0.8],
-            opacity: [0.05, 0.15, 0.05],
-          }}
+          style={{ left: `${15 + i * 18}%`, top: `${20 + (i * 13) % 60}%` }}
+          animate={{ scale: [0.8, 1.1, 0.8], opacity: [0.05, 0.15, 0.05] }}
           transition={{ duration: 3 + i * 0.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
         >
           <svg width="50" height="50" viewBox="0 0 50 50" fill="none" className="opacity-40">
@@ -435,10 +417,7 @@ function DashboardBackground() {
       {/* 3D Rotating data cube */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ perspective: '1000px' }}>
         <motion.div
-          animate={{
-            rotateX: [0, 360],
-            rotateY: [0, 360],
-          }}
+          animate={{ rotateX: [0, 360], rotateY: [0, 360] }}
           transition={{
             rotateX: { duration: 30, repeat: Infinity, ease: 'linear' },
             rotateY: { duration: 45, repeat: Infinity, ease: 'linear' },
@@ -446,7 +425,6 @@ function DashboardBackground() {
           style={{ transformStyle: 'preserve-3d' }}
           className="opacity-[0.04]"
         >
-          {/* Cube faces */}
           {[
             { transform: 'translateZ(200px)', bg: 'rgba(34,211,238,0.03)' },
             { transform: 'translateZ(-200px) rotateY(180deg)', bg: 'rgba(59,130,246,0.03)' },
@@ -478,14 +456,10 @@ function DashboardBackground() {
           className="absolute h-px"
           style={{
             top: `${15 + i * 15}%`,
-            left: 0,
-            right: 0,
+            left: 0, right: 0,
             background: `linear-gradient(90deg, transparent 0%, rgba(34,211,238,${0.03 + i * 0.01}) 30%, rgba(59,130,246,${0.03 + i * 0.01}) 70%, transparent 100%)`,
           }}
-          animate={{
-            opacity: [0.3, 0.7, 0.3],
-            scaleX: [0.8, 1, 0.8],
-          }}
+          animate={{ opacity: [0.3, 0.7, 0.3], scaleX: [0.8, 1, 0.8] }}
           transition={{ duration: 4 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
         />
       ))}
@@ -497,14 +471,10 @@ function DashboardBackground() {
           className="absolute w-px"
           style={{
             left: `${20 + i * 20}%`,
-            top: 0,
-            bottom: 0,
+            top: 0, bottom: 0,
             background: `linear-gradient(0deg, transparent 0%, rgba(59,130,246,${0.02 + i * 0.01}) 30%, rgba(34,211,238,${0.02 + i * 0.01}) 70%, transparent 100%)`,
           }}
-          animate={{
-            opacity: [0.2, 0.6, 0.2],
-            scaleY: [0.8, 1, 0.8],
-          }}
+          animate={{ opacity: [0.2, 0.6, 0.2], scaleY: [0.8, 1, 0.8] }}
           transition={{ duration: 5 + i * 0.4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.5 }}
         />
       ))}
@@ -520,41 +490,16 @@ function DashboardBackground() {
             background: i % 3 === 0 ? 'rgba(34,211,238,0.3)' : i % 3 === 1 ? 'rgba(59,130,246,0.3)' : 'rgba(168,85,247,0.3)',
             boxShadow: `0 0 6px ${i % 3 === 0 ? 'rgba(34,211,238,0.2)' : i % 3 === 1 ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)'}`,
           }}
-          animate={{
-            y: [0, -20 + i * 2, 0],
-            x: [0, 10 - i, 0],
-            opacity: [0.3, 0.7, 0.3],
-          }}
-          transition={{
-            duration: 5 + i * 0.3,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.2,
-          }}
+          animate={{ y: [0, -20 + i * 2, 0], x: [0, 10 - i, 0], opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 5 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
         />
       ))}
 
       {/* Dashboard grid */}
       <div className="absolute inset-0 opacity-[0.015]" style={{
-        backgroundImage: `
-          linear-gradient(90deg, #22D3EE 1px, transparent 1px),
-          linear-gradient(0deg, #22D3EE 1px, transparent 1px)
-        `,
+        backgroundImage: 'linear-gradient(90deg, #22D3EE 1px, transparent 1px), linear-gradient(0deg, #22D3EE 1px, transparent 1px)',
         backgroundSize: '100px 100px',
       }} />
-
-      {/* Corner accents */}
-      {['top-0 left-0', 'top-0 right-0', 'bottom-0 left-0', 'bottom-0 right-0'].map((pos, i) => (
-        <motion.div
-          key={`corner-${i}`}
-          className={`absolute ${pos} w-40 h-40 opacity-[0.03]`}
-          style={{
-            background: `radial-gradient(circle at ${i % 2 === 0 ? '0% 0%' : '100% 100%'}, rgba(34,211,238,0.3), transparent 70%)`,
-          }}
-          animate={{ opacity: [0.03, 0.06, 0.03] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.5 }}
-        />
-      ))}
     </div>
   );
 }
@@ -573,14 +518,12 @@ function HistoryBackground() {
           style={{ transformStyle: 'preserve-3d' }}
           className="opacity-[0.03]"
         >
-          {/* Cylinder rings */}
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={`cyl-ring-${i}`}
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
               style={{
-                width: 400,
-                height: 400,
+                width: 400, height: 400,
                 transform: `translateY(${-200 + i * 45}px) rotateX(90deg)`,
                 borderColor: 'rgba(34, 211, 238, 0.3)',
               }}
@@ -620,22 +563,14 @@ function HistoryBackground() {
         <motion.div
           key={`doc-${i}`}
           className="absolute"
-          style={{
-            left: `${10 + (i * 15) % 80}%`,
-            top: `${10 + (i * 18) % 70}%`,
-          }}
+          style={{ left: `${10 + (i * 15) % 80}%`, top: `${10 + (i * 18) % 70}%` }}
           animate={{
             y: [0, -25 + i * 3, 0],
             rotateY: [0, 15, -15, 0],
             rotateX: [0, 5, -5, 0],
             opacity: [0.04, 0.08, 0.04],
           }}
-          transition={{
-            duration: 7 + i * 0.5,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.6,
-          }}
+          transition={{ duration: 7 + i * 0.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.6 }}
         >
           <svg width="60" height="80" viewBox="0 0 60 80" fill="none" className="opacity-50">
             <rect x="5" y="5" width="50" height="70" rx="3" stroke="#3B82F6" strokeWidth="0.8" fill="rgba(59,130,246,0.03)" />
@@ -647,29 +582,9 @@ function HistoryBackground() {
         </motion.div>
       ))}
 
-      {/* Diagonal scan lines */}
-      <svg className="absolute inset-0 w-full h-full opacity-[0.02]">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <motion.line
-            key={`scanline-${i}`}
-            x1={`${i * 15}%`}
-            y1="0%"
-            x2={`${i * 15 + 20}%`}
-            y2="100%"
-            stroke="#3B82F6"
-            strokeWidth="0.5"
-            animate={{ opacity: [0.2, 0.5, 0.2] }}
-            transition={{ duration: 3 + i * 0.2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
-          />
-        ))}
-      </svg>
-
       {/* Archive grid */}
       <div className="absolute inset-0 opacity-[0.015]" style={{
-        backgroundImage: `
-          linear-gradient(90deg, #3B82F6 1px, transparent 1px),
-          linear-gradient(0deg, #3B82F6 1px, transparent 1px)
-        `,
+        backgroundImage: 'linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)',
         backgroundSize: '120px 120px',
       }} />
     </div>
@@ -683,11 +598,10 @@ export function SecurityBackground3D({ view }: SecurityBackground3DProps) {
   const mounted = useHasMounted();
 
   if (!mounted) {
-    // SSR: render minimal grid only
     return (
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.02]" style={{
-          backgroundImage: `linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)`,
+          backgroundImage: 'linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)',
           backgroundSize: '60px 60px',
         }} />
       </div>
