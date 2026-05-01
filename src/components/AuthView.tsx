@@ -38,40 +38,7 @@ export function AuthView() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-8 relative">
-      {/* 3D Floating Shield Background */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <motion.div
-          animate={{
-            rotateY: [0, 360],
-            rotateX: [0, 10, 0, -10, 0],
-          }}
-          transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-1/4 left-1/4 opacity-10"
-          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
-        >
-          <Shield className="w-32 h-32 text-cyber-cyan" />
-        </motion.div>
-        <motion.div
-          animate={{
-            rotateY: [360, 0],
-            rotateZ: [0, 360],
-          }}
-          transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
-          className="absolute bottom-1/4 right-1/4 opacity-10"
-          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
-        >
-          <Shield className="w-24 h-24 text-cyber-blue" />
-        </motion.div>
-        <motion.div
-          animate={{ y: [-20, 20, -20], rotateX: [0, 5, 0, -5, 0] }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute top-1/3 right-1/3 opacity-[0.07]"
-        >
-          <Shield className="w-20 h-20 text-purple-400" />
-        </motion.div>
-      </div>
-
-      {/* Auth Card */}
+      {/* Auth Card - background now handled by SecurityBackground3D */}
       <motion.div
         initial={{ opacity: 0, y: 40, rotateX: 10 }}
         animate={{ opacity: 1, y: 0, rotateX: 0 }}

@@ -84,31 +84,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   setChatOpen: (open) => set({ chatOpen: open }),
 
   login: async (email: string, password: string) => {
-    // Step 1: Verify credentials via our custom API
+    // Verify credentials via our custom API
     const verifyRes = await fetch('/api/auth/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
 
-    const verifyData = await verifyRes.json();
-
     if (!verifyRes.ok) {
+      const verifyData = await verifyRes.json().catch(() => ({ error: 'Invalid email or password' }));
       throw new Error(verifyData.error || 'Invalid email or password');
     }
 
-    // Step 2: Try NextAuth session (non-blocking, best effort)
-    try {
-      const { signIn } = await import('next-auth/react');
-      await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      });
-    } catch {
-      // NextAuth client signIn may fail in sandboxed environments
-      // We still proceed since our verify API confirmed the credentials
-    }
+    const verifyData = await verifyRes.json();
+
+    // Fire-and-forget NextAuth session (don't block on it)
+    import('next-auth/react')
+      .then(({ signIn }) => signIn('credentials', { email, password, redirect: false }))
+      .catch(() => {});
 
     set({
       isAuthenticated: true,
@@ -129,23 +122,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       body: JSON.stringify({ name, email, password }),
     });
 
-    const data = await res.json();
-
     if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Signup failed' }));
       throw new Error(data.error || 'Signup failed');
     }
 
-    // Try NextAuth session (non-blocking, best effort)
-    try {
-      const { signIn } = await import('next-auth/react');
-      await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      });
-    } catch {
-      // NextAuth client signIn may fail in sandboxed environments
-    }
+    const data = await res.json();
+
+    // Fire-and-forget NextAuth session
+    import('next-auth/react')
+      .then(({ signIn }) => signIn('credentials', { email, password, redirect: false }))
+      .catch(() => {});
 
     set({
       isAuthenticated: true,

@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
-import { SessionProvider, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { Navbar } from '@/components/Navbar';
 import { AuthView } from '@/components/AuthView';
 import { LandingView } from '@/components/LandingView';
@@ -11,7 +11,8 @@ import { LoadingView } from '@/components/LoadingView';
 import { DashboardView } from '@/components/DashboardView';
 import { HistoryView } from '@/components/HistoryView';
 import { ChatBot } from '@/components/ChatBot';
-import { ParticleBackground } from '@/components/ParticleBackground';
+import { SecurityBackground3D } from '@/components/SecurityBackground3D';
+import { AuthProvider } from '@/components/AuthProvider';
 
 function AppContent() {
   const { view, isAuthenticated } = useAppStore();
@@ -31,9 +32,11 @@ function AppContent() {
   }, [session, view]);
 
   return (
-    <div className="min-h-screen bg-grid relative overflow-hidden" style={{ background: '#0B0F19' }}>
-      {/* Ambient background effects */}
-      <ParticleBackground />
+    <div className="min-h-screen relative overflow-hidden" style={{ background: '#0B0F19' }}>
+      {/* Page-specific 3D Background */}
+      <SecurityBackground3D view={view} />
+
+      {/* Ambient blurs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-cyan-500/5 rounded-full blur-3xl" />
@@ -106,7 +109,6 @@ function AppContent() {
         </AnimatePresence>
       </main>
 
-      {/* Chatbot - available when authenticated */}
       {isAuthenticated && <ChatBot />}
     </div>
   );
@@ -114,8 +116,8 @@ function AppContent() {
 
 export default function Home() {
   return (
-    <SessionProvider>
+    <AuthProvider>
       <AppContent />
-    </SessionProvider>
+    </AuthProvider>
   );
 }

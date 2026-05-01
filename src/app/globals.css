@@ -280,3 +280,75 @@
   border: 2px solid rgba(34, 211, 238, 0.4);
   animation: pulse-ring 2s ease-out infinite;
 }
+
+/* ===== 3D BACKGROUND ANIMATIONS ===== */
+
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes data-flow-h {
+  0% { transform: translateX(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(100vw); opacity: 0; }
+}
+
+@keyframes data-flow-v {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes matrix-rain {
+  0% { transform: translateY(-100%); opacity: 0; }
+  5% { opacity: 0.5; }
+  95% { opacity: 0.5; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes cube-rotate {
+  0% { transform: rotateX(0deg) rotateY(0deg); }
+  25% { transform: rotateX(90deg) rotateY(90deg); }
+  50% { transform: rotateX(180deg) rotateY(180deg); }
+  75% { transform: rotateX(270deg) rotateY(270deg); }
+  100% { transform: rotateX(360deg) rotateY(360deg); }
+}
+
+@keyframes wave-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.05); opacity: 0.6; }
+}
+
+@keyframes node-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.2)); }
+  50% { filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.5)); }
+}
+
+/* 3D perspective layers */
+.bg-3d-layer {
+  transform-style: preserve-3d;
+  perspective: 1200px;
+}
+
+.bg-3d-depth-1 { transform: translateZ(0px); }
+.bg-3d-depth-2 { transform: translateZ(50px); }
+.bg-3d-depth-3 { transform: translateZ(100px); }
+
+/* Security-themed ambient glows */
+.security-glow-blue {
+  background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+}
+.security-glow-cyan {
+  background: radial-gradient(ellipse at center, rgba(34, 211, 238, 0.06) 0%, transparent 70%);
+}
+.security-glow-purple {
+  background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.04) 0%, transparent 70%);
+}
+
+/* Smooth page background transitions */
+.page-bg-transition {
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
