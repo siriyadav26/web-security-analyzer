@@ -36,3 +36,24 @@ Stage Summary:
 - Professional messaging replaces absolute claims
 - History working with new fields
 - All frontend components updated to show new data
+
+---
+Task ID: 9-10
+Agent: Main Agent
+Task: Fix header check for sites with invalid SSL certificates and fix URL validation bug
+
+Work Log:
+- Identified that httpforever.com showed all headers as "low confidence - Could not connect" because Node.js fetch rejects connections to sites with invalid SSL certificates
+- Added fallback: when fetch fails due to SSL errors, retry with rejectUnauthorized: false using https module directly
+- Created fetchWithHttpsModule() function that uses Node.js http/https modules with redirect following
+- Fixed redirect handling: httpforever.com redirects from HTTPS to HTTP, so the fallback now supports both protocols
+- Fixed URL validation bug: `urlString.startsWith('http')` incorrectly matched domain names like 'httpforever.com' as having a protocol prefix
+- Changed to regex `/^https?:\/\//i.test(urlString)` for proper protocol detection
+- Updated context detection to explain SSL verification failure when body can't be fetched
+
+Stage Summary:
+- httpforever.com now properly detects 3 headers (CSP, X-Content-Type-Options, Referrer-Policy) instead of 0
+- Score improved from 22 (with all low-confidence headers) to 36 (with actual header detection)
+- Context now says "Authentication-related content detected" instead of "Could not fetch page content"
+- URL validation now works for domains starting with "http" like httpforever.com, httptools.com, etc.
+- All benchmark sites still working correctly

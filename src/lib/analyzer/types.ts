@@ -71,7 +71,9 @@ export function validateUrl(urlString: string): { valid: boolean; error?: string
   let parsedUrl: URL;
   
   try {
-    parsedUrl = new URL(urlString.startsWith('http') ? urlString : `https://${urlString}`);
+    // Check for protocol prefix (must be http:// or https://, not just startsWith 'http')
+    const hasProtocol = /^https?:\/\//i.test(urlString);
+    parsedUrl = new URL(hasProtocol ? urlString : `https://${urlString}`);
   } catch {
     return { valid: false, error: 'Invalid URL format. Please enter a valid website URL.' };
   }
