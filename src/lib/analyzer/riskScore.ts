@@ -1,16 +1,14 @@
-import { HeaderResult, SSLResult, PortResult, Vulnerability, SecuritySuggestion, SiteContext } from './types';
+import { HeaderResult, SSLResult, PortResult, Vulnerability, SecuritySuggestion, SiteContext, ScoreBreakdownItem } from './types';
 
 /**
- * Rebalanced Risk Scoring System
+ * Rebalanced Risk Scoring System v2
  * 
- * Priority order:
- * 1. SSL/HTTPS issues (highest impact) — -40 each
- * 2. Critical missing headers (CSP, HSTS) — -10 each
- * 3. Warning missing headers — -5 each
- * 4. Info missing headers — -2 each
- * 5. Server info exposure — -1
- * 6. Cookie issues — -2
- * 7. Open risky ports (FTP) — -5
+ * Features:
+ * 1. Score breakdown — every deduction is tracked and explained
+ * 2. Primary risk — the #1 issue that most impacts the score
+ * 3. API-aware — irrelevant headers don't affect score
+ * 4. Context-aware — deductions adjusted by site type
+ * 5. Limitations — tracks caveats about the analysis
  * 
  * Score mapping:
  * 80-100 → Low Risk
@@ -22,82 +20,189 @@ export function calculateRiskScore(
   ssl: SSLResult,
   ports: PortResult[],
   context: SiteContext
-): { score: number; riskLevel: 'Low Risk' | 'Medium Risk' | 'High Risk' } {
+): {
+  score: number;
+  riskLevel: 'Low Risk' | 'Medium Risk' | 'High Risk';
+  breakdown: ScoreBreakdownItem[];
+  primaryRisk: string | null;
+} {
   let score = 100;
+  const breakdown: ScoreBreakdownItem[] = [];
+  const isApi = context.isApi || context.siteType === 'api';
+  const isStaticNoAuth = context.siteType === 'static' && !context.hasLogin;
 
   // ===== SSL/HTTPS deductions (HIGHEST PRIORITY) =====
+  // Check if HTTPS server exists but is untrusted (has TLS but cert verification fails)
+  const hasUntrustedTLS = !ssl.enabled && !ssl.httpsVerified && ssl.protocol !== null;
+
   if (!ssl.enabled) {
-    score -= 40; // No HTTPS is a critical issue
-  } else {
-    if (!ssl.trusted) {
-      // Certificate not trusted by CA (self-signed, untrusted root, hostname mismatch)
+    if (hasUntrustedTLS) {
+      // TLS server exists but certificate is not trusted — this is different from "no HTTPS at all"
       score -= 40;
+      const issueLabel = ssl.certIssue === 'self-signed' ? 'Self-signed certificate' :
+                        ssl.certIssue === 'expired' ? 'Expired certificate' :
+                        ssl.certIssue === 'hostname-mismatch' ? 'Hostname mismatch' :
+                        'Untrusted certificate';
+      breakdown.push({ label: `${issueLabel} (HTTPS unavailable)`, points: -40, category: 'ssl' });
+    } else {
+      // Truly no HTTPS at all (no TLS server on port 443)
+      score -= 40;
+      breakdown.push({ label: 'No HTTPS encryption', points: -40, category: 'ssl' });
     }
+  } else {
+    breakdown.push({ label: 'HTTPS enabled', points: 0, category: 'ssl' });
+
+    if (!ssl.trusted) {
+      // Certificate not trusted by CA
+      score -= 40;
+      const issueLabel = ssl.certIssue === 'self-signed' ? 'Self-signed certificate' :
+                        ssl.certIssue === 'expired' ? 'Expired certificate' :
+                        ssl.certIssue === 'hostname-mismatch' ? 'Hostname mismatch' :
+                        'Untrusted certificate';
+      breakdown.push({ label: issueLabel, points: -40, category: 'ssl' });
+    } else {
+      breakdown.push({ label: 'Trusted SSL certificate', points: 0, category: 'ssl' });
+    }
+
     if (ssl.trusted && !ssl.valid) {
-      // Trusted cert but expired/invalid dates
       score -= 35;
+      breakdown.push({ label: 'Certificate date invalid', points: -35, category: 'ssl' });
     }
+
     if (ssl.valid && ssl.daysUntilExpiry !== null && ssl.daysUntilExpiry < 30) {
-      score -= 5; // Expiring soon is minor
+      score -= 5;
+      breakdown.push({ label: `Certificate expiring in ${ssl.daysUntilExpiry} days`, points: -5, category: 'ssl' });
     }
-    // No HSTS equivalent behavior: HTTP doesn't redirect to HTTPS
+
+    // No HTTP→HTTPS redirect
     if (ssl.httpToHttpsRedirect === false) {
-      score -= 5; // Not redirecting HTTP to HTTPS
+      score -= 5;
+      breakdown.push({ label: 'No HTTP-to-HTTPS redirect', points: -5, category: 'ssl' });
+    } else if (ssl.httpToHttpsRedirect === true) {
+      breakdown.push({ label: 'HTTP redirects to HTTPS', points: 0, category: 'ssl' });
     }
   }
 
-  // ===== Security header deductions (MODERATE PRIORITY) =====
+  // ===== Security header deductions (CONTEXT-AWARE) =====
   for (const header of headers) {
     // Skip special headers
     if (header.name === 'Server-Info-Exposure') {
-      if (header.present) score -= 1; // Very low impact
+      if (header.present) {
+        score -= 1;
+        breakdown.push({ label: 'Server version exposed', points: -1, category: 'header' });
+      }
       continue;
     }
     if (header.name === 'Cookie-Security') {
-      if (header.present) score -= 2; // Low impact without knowing cookie type
+      if (header.present) {
+        score -= 2;
+        breakdown.push({ label: 'Cookies missing security flags', points: -2, category: 'header' });
+      }
       continue;
     }
 
     if (!header.present) {
-      // Adjust deductions based on site context
-      const isStaticNoAuth = context.isStaticSite && !context.hasLogin;
+      // API endpoints: irrelevant headers get NO deduction
+      if (header.severity === 'irrelevant') {
+        continue;
+      }
 
+      let deduction = 0;
       switch (header.name) {
         case 'Content-Security-Policy':
-          score -= isStaticNoAuth ? 5 : 10; // Less critical for static sites
+          if (isApi) {
+            // No deduction for APIs (already handled by 'irrelevant' above, but safety check)
+            deduction = 0;
+          } else if (context.hasLogin) {
+            deduction = -10; // Critical for auth sites
+          } else if (isStaticNoAuth) {
+            deduction = -5; // Less critical for static sites
+          } else {
+            deduction = -10; // Standard deduction for interactive sites
+          }
           break;
+
         case 'Strict-Transport-Security':
-          score -= ssl.enabled ? 10 : 3; // HSTS matters most when HTTPS is present
+          if (ssl.enabled) {
+            if (isApi) {
+              deduction = -5; // Less critical for APIs but still matters
+            } else if (context.hasLogin) {
+              deduction = -10; // Critical for auth sites
+            } else {
+              deduction = -10; // Standard
+            }
+          } else {
+            deduction = -3; // HSTS irrelevant without HTTPS
+          }
           break;
+
         case 'X-Frame-Options':
-          score -= isStaticNoAuth ? 2 : 5;
+          if (isApi) {
+            deduction = 0; // Irrelevant for APIs
+          } else if (isStaticNoAuth) {
+            deduction = -2;
+          } else {
+            deduction = -5;
+          }
           break;
+
         case 'X-Content-Type-Options':
-          score -= 3;
+          deduction = -3;
           break;
+
         case 'Referrer-Policy':
-          score -= 2;
+          if (isApi) {
+            deduction = 0; // Irrelevant for APIs
+          } else {
+            deduction = -2;
+          }
           break;
+
         case 'Permissions-Policy':
-          score -= 1;
+          deduction = -1;
           break;
+
         case 'X-XSS-Protection':
-          score -= 1;
+          if (isApi) {
+            deduction = 0; // Irrelevant for APIs
+          } else {
+            deduction = -1;
+          }
           break;
+
         default:
-          score -= 2;
+          deduction = -2;
       }
+
+      score += deduction; // deduction is negative, so we add it
+      if (deduction !== 0) {
+        breakdown.push({
+          label: `Missing ${header.name}`,
+          points: deduction,
+          category: 'header',
+        });
+      }
+    } else {
+      // Header is present — show as positive in breakdown
+      breakdown.push({
+        label: `${header.name} present`,
+        points: 0,
+        category: 'header',
+      });
     }
   }
 
   // ===== Port deductions (INFO ONLY — don't heavily penalize) =====
   for (const port of ports) {
     if (port.open) {
-      // Only penalize genuinely risky services
-      if (port.port === 21) score -= 5; // FTP is genuinely risky
-      // Ports 80 and 443 are EXPECTED for web servers — no deduction
-      // Port 22 (SSH) — minor concern but common, minimal deduction
-      if (port.port === 22) score -= 1;
+      if (port.port === 21) {
+        score -= 5;
+        breakdown.push({ label: 'FTP port open (plaintext)', points: -5, category: 'port' });
+      }
+      if (port.port === 22) {
+        score -= 1;
+        breakdown.push({ label: 'SSH port accessible', points: -1, category: 'port' });
+      }
     }
   }
 
@@ -113,11 +218,96 @@ export function calculateRiskScore(
     riskLevel = 'High Risk';
   }
 
-  return { score, riskLevel };
+  // Determine primary risk (the single issue with the largest deduction)
+  const primaryRisk = determinePrimaryRisk(breakdown, ssl);
+
+  return { score, riskLevel, breakdown, primaryRisk };
+}
+
+/**
+ * Determine the primary risk — the single most impactful issue.
+ */
+function determinePrimaryRisk(
+  breakdown: ScoreBreakdownItem[],
+  ssl: SSLResult
+): string | null {
+  // Filter to deductions only, sorted by magnitude
+  const deductions = breakdown
+    .filter(b => b.points < 0)
+    .sort((a, b) => a.points - b.points); // Most negative first
+
+  if (deductions.length === 0) {
+    return null;
+  }
+
+  const top = deductions[0];
+
+  // Provide clear, actionable primary risk description
+  if (top.category === 'ssl') {
+    if (top.label.includes('No HTTPS')) {
+      return 'No HTTPS Encryption — All data is transmitted in plaintext';
+    }
+    if (top.label.includes('Self-signed')) {
+      return 'Self-Signed SSL Certificate — Browsers will show security warnings';
+    }
+    if (top.label.includes('Expired')) {
+      return 'Expired SSL Certificate — Browsers will block or warn about this site';
+    }
+    if (top.label.includes('Hostname')) {
+      return 'SSL Certificate Hostname Mismatch — Certificate was issued for a different domain';
+    }
+    if (top.label.includes('Untrusted')) {
+      return 'Untrusted SSL Certificate — Certificate chain cannot be verified';
+    }
+    if (top.label.includes('date invalid')) {
+      return 'Invalid SSL Certificate Dates — Certificate date range is not valid';
+    }
+    if (top.label.includes('expiring')) {
+      return 'SSL Certificate Expiring Soon — Renew before expiration to avoid service disruption';
+    }
+    if (top.label.includes('redirect')) {
+      return 'No HTTP-to-HTTPS Redirect — Users can access the insecure HTTP version';
+    }
+    return top.label;
+  }
+
+  if (top.category === 'header') {
+    if (top.label.includes('CSP') || top.label.includes('Content-Security-Policy')) {
+      return 'Missing Content-Security-Policy — Increases XSS and injection attack risk';
+    }
+    if (top.label.includes('HSTS') || top.label.includes('Strict-Transport-Security')) {
+      return 'Missing HSTS — Browser may access the site over insecure HTTP';
+    }
+    if (top.label.includes('X-Frame')) {
+      return 'Missing X-Frame-Options — Page may be vulnerable to clickjacking';
+    }
+    // For other header deductions, provide a clean description
+    if (top.label.includes('Cookie')) {
+      return 'Cookie Security Flags — Some cookies missing Secure/HttpOnly flags';
+    }
+    if (top.label.includes('Server')) {
+      return 'Server Version Exposure — Server header reveals version information';
+    }
+    const cleanLabel = top.label.startsWith('Missing ') ? top.label.replace('Missing ', '') : top.label;
+    return `Missing ${cleanLabel} — Consider adding this security header`;
+  }
+
+  if (top.category === 'port') {
+    if (top.label.includes('FTP')) {
+      return 'FTP Port Open — Credentials and data transmitted in plaintext';
+    }
+    if (top.label.includes('SSH')) {
+      return 'SSH Port Accessible — Can be targeted for brute-force attacks';
+    }
+    return top.label;
+  }
+
+  return top.label;
 }
 
 /**
  * Identify vulnerabilities with professional messaging and confidence levels.
+ * Now API-aware: browser-specific headers are not flagged for APIs.
  */
 export function identifyVulnerabilities(
   headers: HeaderResult[],
@@ -126,19 +316,54 @@ export function identifyVulnerabilities(
   context: SiteContext
 ): Vulnerability[] {
   const vulnerabilities: Vulnerability[] = [];
-  const isStaticNoAuth = context.isStaticSite && !context.hasLogin;
+  const isStaticNoAuth = context.siteType === 'static' && !context.hasLogin;
+  const isApi = context.isApi || context.siteType === 'api';
+  const hasUntrustedTLS = !ssl.enabled && !ssl.httpsVerified && ssl.protocol !== null;
 
   // ===== SSL/HTTPS vulnerabilities (HIGHEST PRIORITY — listed first) =====
   if (!ssl.enabled) {
-    vulnerabilities.push({
-      type: 'No HTTPS Encryption',
-      severity: 'critical',
-      description: 'The website does not use HTTPS. All data transmitted between the client and server is unencrypted and can be intercepted by third parties.',
-      recommendation: 'Obtain an SSL/TLS certificate and configure your server to use HTTPS. Consider using Let\'s Encrypt for free certificates.',
-      confidence: 'high',
-    });
+    if (hasUntrustedTLS) {
+      // TLS server exists but cert is untrusted — browsers would block access
+      const issueType = ssl.certIssue;
+      let description: string;
+      let severity: 'critical' | 'high';
+      let recommendation: string;
+
+      switch (issueType) {
+        case 'self-signed':
+          description = 'The server has an HTTPS endpoint with a self-signed certificate. Browsers will display security warnings and may block access entirely. This is effectively the same as having no HTTPS from a user trust perspective.';
+          recommendation = 'Obtain a certificate from a trusted Certificate Authority (e.g., Let\'s Encrypt, DigiCert, Cloudflare). Self-signed certificates should only be used in internal/testing environments.';
+          severity = 'critical';
+          break;
+        case 'expired':
+          description = 'The server has an HTTPS endpoint with an expired certificate. Browsers will display security warnings and may block access entirely. This is effectively the same as having no HTTPS from a user trust perspective.';
+          recommendation = 'Renew the SSL certificate immediately. Set up automated renewal (e.g., certbot with cron) to prevent future expirations.';
+          severity = 'critical';
+          break;
+        default:
+          description = 'The server has an HTTPS endpoint but the certificate cannot be verified as trusted. Browsers will display security warnings and may block access entirely.';
+          recommendation = 'Obtain a certificate from a trusted Certificate Authority. Ensure the full certificate chain is properly installed.';
+          severity = 'critical';
+      }
+
+      vulnerabilities.push({
+        type: 'Untrusted SSL Certificate',
+        severity,
+        description,
+        recommendation,
+        confidence: 'high',
+      });
+    } else {
+      // Truly no HTTPS at all
+      vulnerabilities.push({
+        type: 'No HTTPS Encryption',
+        severity: 'critical',
+        description: 'The website does not use HTTPS. All data transmitted between the client and server is unencrypted and can be intercepted by third parties.',
+        recommendation: 'Obtain an SSL/TLS certificate and configure your server to use HTTPS. Consider using Let\'s Encrypt for free certificates.',
+        confidence: 'high',
+      });
+    }
   } else if (!ssl.trusted) {
-    // Determine specific issue
     const issueType = ssl.certIssue;
     let description: string;
     let severity: 'critical' | 'high' | 'medium';
@@ -152,7 +377,7 @@ export function identifyVulnerabilities(
         break;
       case 'expired':
         description = 'The SSL certificate has expired. Browsers will display security warnings and may block access to the site entirely.';
-        recommendation: 'Renew the SSL certificate immediately. Set up automated renewal (e.g., certbot with cron) to prevent future expirations.';
+        recommendation = 'Renew the SSL certificate immediately. Set up automated renewal (e.g., certbot with cron) to prevent future expirations.';
         severity = 'critical';
         break;
       case 'hostname-mismatch':
@@ -199,10 +424,15 @@ export function identifyVulnerabilities(
     });
   }
 
-  // ===== Header vulnerabilities (SECONDARY PRIORITY) =====
+  // ===== Header vulnerabilities (SECONDARY PRIORITY, API-AWARE) =====
   for (const header of headers) {
     // Skip special headers handled separately
     if (header.name === 'Server-Info-Exposure' || header.name === 'Cookie-Security') {
+      continue;
+    }
+
+    // Skip irrelevant headers (for APIs)
+    if (header.severity === 'irrelevant') {
       continue;
     }
 
@@ -225,14 +455,15 @@ export function identifyVulnerabilities(
           if (ssl.enabled) {
             vulnerabilities.push({
               type: 'Missing HSTS',
-              severity: 'high',
-              description: 'No Strict-Transport-Security header detected. Without HSTS, browsers may access the site over HTTP before redirecting, exposing session cookies to interception.',
+              severity: isApi ? 'medium' : 'high',
+              description: isApi
+                ? 'No Strict-Transport-Security header detected. For API endpoints, HSTS is less critical than for browser-facing sites, but still recommended if any browser consumers exist.'
+                : 'No Strict-Transport-Security header detected. Without HSTS, browsers may access the site over HTTP before redirecting, exposing session cookies to interception.',
               recommendation: 'Add Strict-Transport-Security header (e.g., max-age=31536000; includeSubDomains) to enforce HTTPS connections.',
               confidence: header.confidence || 'high',
               confidenceNote: header.confidenceNote,
             });
           } else {
-            // HSTS is irrelevant without HTTPS
             vulnerabilities.push({
               type: 'Missing HSTS',
               severity: 'info',
@@ -307,7 +538,7 @@ export function identifyVulnerabilities(
     });
   }
 
-  // ===== Port vulnerabilities (INFO ONLY — don't overstate) =====
+  // ===== Port vulnerabilities (INFO ONLY) =====
   for (const port of ports) {
     if (port.open && port.port === 21) {
       vulnerabilities.push({
@@ -343,8 +574,9 @@ export function generateSuggestions(
   context: SiteContext
 ): SecuritySuggestion[] {
   const suggestions: SecuritySuggestion[] = [];
+  const isApi = context.isApi || context.siteType === 'api';
 
-  // ===== SSL/HTTPS suggestions (HIGHEST PRIORITY — shown first) =====
+  // ===== SSL/HTTPS suggestions (HIGHEST PRIORITY) =====
   if (!ssl.enabled) {
     suggestions.push({
       category: 'SSL/TLS',
@@ -378,7 +610,7 @@ export function generateSuggestions(
     });
   }
 
-  // ===== Header suggestions (SECONDARY PRIORITY) =====
+  // ===== Header suggestions (CONTEXT-AWARE) =====
   const missingCriticalHeaders = headers.filter(h => !h.present && h.severity === 'critical');
   if (missingCriticalHeaders.length > 0 && ssl.enabled) {
     suggestions.push({
@@ -397,6 +629,19 @@ export function generateSuggestions(
       title: 'Add Warning-Level Security Headers',
       description: `Consider adding ${missingWarningHeaders.map(h => h.name).join(', ')} to further harden your website. These headers provide defense-in-depth protections against content-type confusion and clickjacking.`,
     });
+  }
+
+  // API-specific suggestion
+  if (isApi) {
+    const irrelevantHeaders = headers.filter(h => h.severity === 'irrelevant');
+    if (irrelevantHeaders.length > 0) {
+      suggestions.push({
+        category: 'API Security',
+        priority: 'info',
+        title: 'Browser Headers Not Applicable',
+        description: `This is an API endpoint. The following headers are designed for browser-side protection and do not apply to APIs: ${irrelevantHeaders.map(h => h.name).join(', ')}. Focus on API-specific security: authentication, rate limiting, input validation, and HTTPS enforcement.`,
+      });
+    }
   }
 
   // Server info exposure suggestion
@@ -456,4 +701,37 @@ export function generateSuggestions(
   }
 
   return suggestions;
+}
+
+/**
+ * Generate limitations list based on analysis conditions.
+ */
+export function generateLimitations(
+  analysisMode: 'secure' | 'fallback',
+  context: SiteContext,
+  ssl: SSLResult
+): string[] {
+  const limitations: string[] = [];
+
+  if (analysisMode === 'fallback') {
+    limitations.push('Header analysis was performed using a fallback method (SSL certificate verification was bypassed). Results may be partially unreliable.');
+  }
+
+  if (context.siteType === 'unknown') {
+    limitations.push('Could not determine site type. Risk assessments use default (interactive site) severity levels, which may overestimate risk for static sites or APIs.');
+  }
+
+  if (ssl.httpToHttpsRedirect === null) {
+    limitations.push('Could not verify HTTP-to-HTTPS redirect behavior. The site may or may not redirect HTTP traffic to HTTPS.');
+  }
+
+  if (context.isApi) {
+    limitations.push('Browser-specific security headers (CSP, X-Frame-Options, X-XSS-Protection) are not applicable to API endpoints and have been excluded from scoring.');
+  }
+
+  // Add generic limitations
+  limitations.push('This analysis checks a single page/endpoint. Security headers and behavior may differ across different routes and endpoints.');
+  limitations.push('Dynamically applied headers (via JavaScript or specific routes) may not be detected in this analysis.');
+
+  return limitations;
 }

@@ -57,3 +57,35 @@ Stage Summary:
 - Context now says "Authentication-related content detected" instead of "Could not fetch page content"
 - URL validation now works for domains starting with "http" like httpforever.com, httptools.com, etc.
 - All benchmark sites still working correctly
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement all 9 fixes from user audit to make SecurityAnalyzer 10/10
+
+Work Log:
+- Rewrote types.ts: Added SiteType ('static'|'interactive'|'api'|'unknown'), ScoreBreakdownItem, analysisMode, limitations, primaryRisk, scoreBreakdown, httpsVerified, finalUrl fields
+- Rewrote sslCheck.ts: Added verifyHttpsWorks() for strict HTTPS verification (only marks HTTPS enabled if actual fetch succeeds with trusted cert), differentiates "no TLS" vs "TLS exists but untrusted"
+- Rewrote headerCheck.ts: Added API detection (JSON content-type, JSON body, API-style structure), strict auth detection (requires password field + form + login keywords), API-aware severity adjustment (CSP/X-Frame/XSS/Permissions/Referrer = irrelevant for APIs), analysis mode tracking (secure/fallback)
+- Rewrote riskScore.ts: Added score breakdown tracking (every deduction labeled and categorized), primary risk identification, API-aware scoring (irrelevant headers get 0 deduction), generateLimitations(), context-aware severity for static/API/interactive sites
+- Updated analyzer index: Clean 4-phase architecture (collection → interpretation → scoring → reporting)
+- Updated Prisma schema: Added analysisMode, limitations, scoreBreakdown, primaryRisk fields
+- Updated API routes: Save new fields, backwards-compatible parseScan for old records
+- Created ScoreBreakdownCard: Shows score calculation breakdown by category (SSL/Headers/Ports)
+- Updated DashboardView: Added analysis mode badge, primary risk display, limitations section, site type badge (API/Static/Interactive/Unknown)
+- Updated SecurityHeadersCard: Shows irrelevant headers differently (strikethrough, "not applicable" badge)
+- Updated SSLStatusCard: Shows "HTTPS Verified" as primary indicator, "TLS Server Detected" for untrusted servers
+- Fixed body reading: Changed from response.text() to streaming reader with 50KB limit to prevent OOM crashes on large API responses
+- Fixed neverssl.com: Now correctly shows HTTPS: False (was incorrectly showing True before)
+- Fixed self-signed.badssl.com: Correctly shows "Self-Signed SSL Certificate" as primary risk, not "No HTTPS Encryption"
+- Fixed jsonplaceholder.typicode.com/posts: Correctly identified as API endpoint with irrelevant headers excluded
+
+Stage Summary:
+- All 9 audit fixes implemented and tested
+- Benchmark results:
+  - github.com: 94, Low Risk, secure mode ✅
+  - example.com: 70, Medium Risk, secure mode ✅
+  - jsonplaceholder.typicode.com/posts: 89, Low Risk, API type ✅
+  - neverssl.com: 35, High Risk, fallback mode, HTTPS=False ✅
+  - self-signed.badssl.com: 42, High Risk, fallback mode ✅
+- Server stability: Fixed OOM crash with streaming body reader (50KB limit)
+- Need to start with NODE_OPTIONS='--max-old-space-size=1024' for stable operation

@@ -3,13 +3,13 @@ export interface HeaderResult {
   present: boolean;
   value: string | null;
   description: string;
-  severity: 'critical' | 'warning' | 'info';
+  severity: 'critical' | 'warning' | 'info' | 'irrelevant';  // 'irrelevant' for API endpoints
   confidence: 'high' | 'medium' | 'low';
   confidenceNote?: string;
 }
 
 export interface SSLResult {
-  enabled: boolean;           // HTTPS is available
+  enabled: boolean;           // HTTPS is available AND verified (strict)
   trusted: boolean;           // Certificate is trusted by a CA (not self-signed)
   valid: boolean;             // Certificate date range is valid (not expired)
   protocol: string | null;
@@ -18,6 +18,8 @@ export interface SSLResult {
   daysUntilExpiry: number | null;
   certIssue: 'none' | 'self-signed' | 'expired' | 'untrusted-root' | 'hostname-mismatch' | 'revoked' | null;
   httpToHttpsRedirect: boolean | null;  // Does HTTP redirect to HTTPS?
+  httpsVerified: boolean;     // Did we successfully verify HTTPS by making a real request?
+  finalUrl: string | null;   // The final URL after following redirects
   error: string | null;
 }
 
@@ -41,16 +43,26 @@ export interface Vulnerability {
 
 export interface SecuritySuggestion {
   category: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: 'high' | 'medium' | 'low' | 'info';
   title: string;
   description: string;
 }
 
+export type SiteType = 'static' | 'interactive' | 'api' | 'unknown';
+
 export interface SiteContext {
-  hasForms: boolean;          // Does the site have form elements?
-  hasLogin: boolean;          // Does the site have login/auth?
-  isStaticSite: boolean;      // Likely a static/informational site?
-  detectionNotes: string;     // How we determined this
+  siteType: SiteType;           // What kind of site is this?
+  hasForms: boolean;            // Does the site have form elements?
+  hasLogin: boolean;            // Does the site have login/auth (strict detection)?
+  isStaticSite: boolean;       // Likely a static/informational site?
+  isApi: boolean;              // Is this an API endpoint?
+  detectionNotes: string;      // How we determined this
+}
+
+export interface ScoreBreakdownItem {
+  label: string;
+  points: number;  // Positive = credit, Negative = deduction
+  category: 'ssl' | 'header' | 'port' | 'context';
 }
 
 export interface AnalysisResult {
@@ -63,6 +75,10 @@ export interface AnalysisResult {
   vulnerabilities: Vulnerability[];
   suggestions: SecuritySuggestion[];
   context: SiteContext;
+  analysisMode: 'secure' | 'fallback';   // Was this analyzed with full trust or fallback?
+  limitations: string[];                   // Caveats about this analysis
+  scoreBreakdown: ScoreBreakdownItem[];    // Detailed score calculation
+  primaryRisk: string | null;              // The #1 risk factor
   analyzedAt: string;
 }
 

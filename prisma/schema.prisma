@@ -31,6 +31,10 @@ model Scan {
   vulnerabilities String
   suggestions     String
   context         String   @default("{}")
+  analysisMode    String   @default("secure")
+  limitations     String   @default("[]")
+  scoreBreakdown  String   @default("[]")
+  primaryRisk     String?
   createdAt       DateTime @default(now())
   userId          String?
   user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -2,14 +2,13 @@ import { SSLResult } from './types';
 import tls from 'tls';
 
 /**
- * Check SSL/TLS status with proper trust chain validation.
+ * Check SSL/TLS status with STRICT trust chain validation.
  * 
- * Key improvements:
- * 1. First attempts a trusted connection (rejectUnauthorized: true)
- *    to verify the certificate is actually trusted by the system CA store.
- * 2. Falls back to untrusted connection to gather certificate details
- *    even when the cert is invalid/self-signed.
- * 3. Checks HTTP→HTTPS redirect behavior.
+ * Key design decisions:
+ * 1. HTTPS = enabled ONLY if we made a successful trusted request AND the final URL is https://
+ * 2. Uses rejectUnauthorized: true for trust chain validation
+ * 3. Falls back to untrusted connection to gather cert details for display
+ * 4. Checks HTTP→HTTPS redirect behavior
  */
 export async function checkSSL(url: string): Promise<SSLResult> {
   const defaultResult: SSLResult = {
@@ -22,6 +21,8 @@ export async function checkSSL(url: string): Promise<SSLResult> {
     daysUntilExpiry: null,
     certIssue: null,
     httpToHttpsRedirect: null,
+    httpsVerified: false,
+    finalUrl: null,
     error: null,
   };
 
@@ -35,10 +36,14 @@ export async function checkSSL(url: string): Promise<SSLResult> {
   const hostname = parsedUrl.hostname;
   const port = parsedUrl.port ? parseInt(parsedUrl.port) : 443;
 
-  // Step 1: Check if HTTPS is available and certificate is trusted
+  // Step 1: Try to actually make a verified HTTPS request
+  // This is the STRICT check — HTTPS is only "enabled" if we can verify it works
+  const httpsVerification = await verifyHttpsWorks(url);
+
+  // Step 2: Check TLS trust chain independently
   const trustedCheck = await checkTrustedConnection(hostname, port);
 
-  // Step 2: If not trusted, try untrusted connection to get cert details
+  // Step 3: If not trusted, try untrusted connection to get cert details
   let certDetails: {
     protocol: string | null;
     validFrom: Date | null;
@@ -53,10 +58,10 @@ export async function checkSSL(url: string): Promise<SSLResult> {
     certDetails = trustedCheck.certDetails;
   }
 
-  // Step 3: Check HTTP→HTTPS redirect
+  // Step 4: Check HTTP→HTTPS redirect
   const httpToHttpsRedirect = await checkHttpRedirect(hostname);
 
-  // Step 4: Build result
+  // Step 5: Build result
   const now = new Date();
   const validFrom = certDetails?.validFrom;
   const validTo = certDetails?.validTo;
@@ -81,20 +86,118 @@ export async function checkSSL(url: string): Promise<SSLResult> {
     }
   }
 
+  // HTTPS is "enabled" if we can make a verified HTTPS request to the site.
+  // This is the STRICT interpretation: if browsers would show warnings, HTTPS is not "enabled".
+  // Sites like neverssl.com may have port 443 open with TLS, but if the cert isn't trusted,
+  // we don't consider HTTPS as truly "enabled" because browsers would block/warn.
+  // 
+  // However, we differentiate two cases:
+  // 1. No TLS at all → enabled=false, httpsVerified=false (truly no HTTPS)
+  // 2. TLS exists but untrusted → enabled=true, httpsVerified=false (HTTPS exists but broken)
+  // We use httpsVerified as the definitive answer to "does HTTPS work properly?"
+  const hasTlsConnection = trustedCheck.connected || certDetails !== null;
+  const httpsEnabled = httpsVerification.success;  // STRICT: only true if full HTTPS request succeeds
+  const httpsVerified = httpsVerification.success;
+
+  // If we can't verify HTTPS but TLS connection exists, we note this
+  const hasUntrustedTLS = !httpsVerification.success && hasTlsConnection;
+
   return {
-    enabled: trustedCheck.connected || certDetails !== null,
-    trusted: trustedCheck.trusted,
-    valid: trustedCheck.trusted && isDateValid,
+    enabled: httpsEnabled,
+    trusted: httpsEnabled && trustedCheck.trusted,
+    valid: httpsEnabled && trustedCheck.trusted && isDateValid,
     protocol: certDetails?.protocol || trustedCheck.certDetails?.protocol || null,
     issuer: certDetails?.issuer || trustedCheck.certDetails?.issuer || null,
     expiryDate: validTo?.toISOString() || null,
     daysUntilExpiry,
     certIssue,
     httpToHttpsRedirect,
-    error: !trustedCheck.connected && certDetails === null
-      ? trustedCheck.error || 'Could not establish HTTPS connection'
+    httpsVerified: httpsVerified,
+    finalUrl: httpsVerification.finalUrl,
+    error: !hasTlsConnection
+      ? 'Could not establish HTTPS connection'
+      : hasUntrustedTLS
+      ? `HTTPS server exists on port 443 but certificate is not trusted — browsers will show security warnings (${certIssue || 'untrusted certificate'})`
       : null,
   };
+}
+
+/**
+ * STRICT HTTPS verification:
+ * Actually try to make a successful HTTPS request.
+ * HTTPS is only "enabled" if:
+ * 1. The request succeeds (status 200-ish)
+ * 2. The final URL after redirects is https://
+ * 
+ * This prevents sites like neverssl.com from being marked as "HTTPS enabled"
+ * just because a TLS connection can be established to port 443.
+ */
+async function verifyHttpsWorks(url: string): Promise<{
+  success: boolean;
+  finalUrl: string | null;
+  error?: string;
+}> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    // Ensure we're checking HTTPS
+    const httpsUrl = url.replace(/^http:\/\//, 'https://');
+
+    const response = await fetch(httpsUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SecurityAnalyzer/1.0)',
+      },
+    });
+
+    clearTimeout(timeout);
+
+    // Check if the final URL is https://
+    const finalUrl = response.url || httpsUrl;
+    const isHttpsFinal = finalUrl.startsWith('https://');
+
+    // Check for successful response (2xx or 3xx that we followed)
+    const isSuccess = response.ok || (response.status >= 200 && response.status < 400);
+
+    return {
+      success: isHttpsFinal && isSuccess,
+      finalUrl: isHttpsFinal ? finalUrl : null,
+      error: !isHttpsFinal
+        ? 'Site does not serve HTTPS (final URL is HTTP)'
+        : !isSuccess
+        ? `HTTPS request returned status ${response.status}`
+        : undefined,
+    };
+  } catch (error: any) {
+    const errorMsg = error?.cause?.code || error?.code || error?.message || '';
+
+    // Distinguish between "no HTTPS at all" vs "HTTPS exists but cert is bad"
+    const isCertError = errorMsg.includes('CERT') ||
+      errorMsg.includes('certificate') ||
+      errorMsg.includes('SSL') ||
+      errorMsg.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE') ||
+      errorMsg.includes('SELF_SIGNED_CERT');
+
+    if (isCertError) {
+      // HTTPS server exists, but cert is untrusted
+      // Don't mark as "enabled" since browsers would block this
+      return {
+        success: false,
+        finalUrl: null,
+        error: `HTTPS server exists but certificate is not trusted: ${errorMsg}`,
+      };
+    }
+
+    // No HTTPS at all (connection refused, timeout, DNS failure)
+    return {
+      success: false,
+      finalUrl: null,
+      error: 'Could not establish HTTPS connection',
+    };
+  }
 }
 
 /**
@@ -160,11 +263,8 @@ function checkTrustedConnection(
       socket.on('error', (err: any) => {
         clearTimeout(timeout);
 
-        // Parse the specific TLS error to understand WHY it failed
         let error = err.message;
 
-        // If the connection was made but cert validation failed,
-        // we can still extract some info. The error code tells us the issue.
         resolve({
           connected: true, // Connection succeeded, just not trusted
           trusted: false,

@@ -42,6 +42,10 @@ export async function POST(request: NextRequest) {
           vulnerabilities: JSON.stringify(result.vulnerabilities),
           suggestions: JSON.stringify(result.suggestions),
           context: JSON.stringify(result.context),
+          analysisMode: result.analysisMode,
+          limitations: JSON.stringify(result.limitations),
+          scoreBreakdown: JSON.stringify(result.scoreBreakdown),
+          primaryRisk: result.primaryRisk,
         },
       });
     } catch (dbError) {

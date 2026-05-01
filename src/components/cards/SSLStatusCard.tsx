@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Lock, Unlock, AlertTriangle, Check, X, Clock, ShieldAlert, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, Unlock, AlertTriangle, Check, X, Clock, ShieldAlert, ShieldCheck, ArrowRight, Eye } from 'lucide-react';
 import type { SSLResult } from '@/lib/analyzer/types';
 
 interface SSLStatusCardProps {
@@ -18,14 +18,15 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
     statusLabel = 'No HTTPS';
     statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
     StatusIcon = Unlock;
-  } else if (!ssl.trusted) {
+  } else if (!ssl.httpsVerified) {
+    // HTTPS exists but certificate is not trusted
     statusLabel = ssl.certIssue === 'self-signed' ? 'Self-Signed' :
                  ssl.certIssue === 'expired' ? 'Expired' :
                  ssl.certIssue === 'hostname-mismatch' ? 'Hostname Mismatch' :
                  'Untrusted';
     statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
     StatusIcon = ShieldAlert;
-  } else if (!ssl.valid) {
+  } else if (!ssl.trusted) {
     statusLabel = 'Invalid';
     statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
     StatusIcon = ShieldAlert;
@@ -57,20 +58,28 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
 
       {/* SSL Details */}
       <div className="space-y-3">
-        {/* HTTPS Status */}
+        {/* HTTPS Status (Strict Verification) */}
         <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <span className="text-sm text-slate-400">HTTPS Enabled</span>
+          <span className="text-sm text-slate-400">HTTPS Verified</span>
           <div className="flex items-center gap-1.5">
-            {ssl.enabled ? (
+            {ssl.httpsVerified ? (
               <Check className="w-4 h-4 text-green-400" />
             ) : (
               <X className="w-4 h-4 text-red-400" />
             )}
-            <span className={`text-sm ${ssl.enabled ? 'text-green-400' : 'text-red-400'}`}>
-              {ssl.enabled ? 'Yes' : 'No'}
+            <span className={`text-sm ${ssl.httpsVerified ? 'text-green-400' : 'text-red-400'}`}>
+              {ssl.httpsVerified ? 'Yes' : 'No'}
             </span>
           </div>
         </div>
+
+        {/* HTTPS Enabled (can TLS connect at all?) */}
+        {!ssl.enabled && ssl.protocol && (
+          <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <span className="text-sm text-slate-400">TLS Server Detected</span>
+            <span className="text-sm text-yellow-400">Yes (untrusted)</span>
+          </div>
+        )}
 
         {/* Certificate Trust */}
         {ssl.enabled && (
@@ -143,7 +152,7 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
         )}
 
         {/* HTTP→HTTPS Redirect */}
-        {ssl.enabled && ssl.httpToHttpsRedirect !== null && (
+        {ssl.httpToHttpsRedirect !== null && (
           <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <span className="text-sm text-slate-400">HTTP→HTTPS Redirect</span>
             <div className="flex items-center gap-1.5">
