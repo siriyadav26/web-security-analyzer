@@ -42,3 +42,23 @@ Stage Summary:
 - All 5 page-specific 3D backgrounds render properly
 - Server is stable in production mode
 - Production build at http://localhost:3000
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix 502 Bad Gateway - server crashing
+
+Work Log:
+- Identified root cause: `output: "standalone"` in next.config.ts was incompatible with `next start`
+- Removed `output: "standalone"` from next.config.ts
+- Background processes were being killed by the sandbox environment between shell sessions
+- Installed pm2 process manager for persistent server management
+- Fixed Prisma global caching (always cache in global regardless of NODE_ENV)
+- Server is now managed by pm2 and auto-restarts if it crashes
+
+Stage Summary:
+- Server running via pm2 on port 3000, process name "security-analyzer"
+- All endpoints working: Homepage (200), Auth verify (200/401), Signup (201)
+- Server survives rapid sequential and concurrent requests
+- PM2 process list saved to /home/z/.pm2/dump.pm2
+- Preview URL should now be accessible
