@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
           ports: JSON.stringify(result.ports),
           vulnerabilities: JSON.stringify(result.vulnerabilities),
           suggestions: JSON.stringify(result.suggestions),
+          context: JSON.stringify(result.context),
         },
       });
     } catch (dbError) {

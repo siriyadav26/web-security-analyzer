@@ -14,21 +14,27 @@ export async function analyzeUrl(url: string): Promise<AnalysisResult> {
 
   const normalizedUrl = validation.normalizedUrl!;
 
-  // Run all checks in parallel
-  const [headers, ssl, ports] = await Promise.all([
-    checkHeaders(normalizedUrl),
+  // Run checks with proper sequencing:
+  // 1. SSL/HTTPS check first (highest priority)
+  // 2. Headers check (includes context analysis)
+  // 3. Port check (informational)
+  // All in parallel since they're independent
+  const [ssl, headerResult, ports] = await Promise.all([
     checkSSL(normalizedUrl),
+    checkHeaders(normalizedUrl),
     checkPorts(normalizedUrl),
   ]);
 
-  // Calculate risk score
-  const { score, riskLevel } = calculateRiskScore(headers, ssl, ports);
+  const { headers, context } = headerResult;
 
-  // Identify vulnerabilities
-  const vulnerabilities = identifyVulnerabilities(headers, ssl, ports);
+  // Calculate risk score with context
+  const { score, riskLevel } = calculateRiskScore(headers, ssl, ports, context);
 
-  // Generate suggestions
-  const suggestions = generateSuggestions(headers, ssl, ports, vulnerabilities);
+  // Identify vulnerabilities with context
+  const vulnerabilities = identifyVulnerabilities(headers, ssl, ports, context);
+
+  // Generate suggestions with context
+  const suggestions = generateSuggestions(headers, ssl, ports, vulnerabilities, context);
 
   return {
     url: normalizedUrl,
@@ -39,9 +45,10 @@ export async function analyzeUrl(url: string): Promise<AnalysisResult> {
     ports,
     vulnerabilities,
     suggestions,
+    context,
     analyzedAt: new Date().toISOString(),
   };
 }
 
 export { validateUrl } from './types';
-export type { AnalysisResult, HeaderResult, SSLResult, PortResult, Vulnerability, SecuritySuggestion } from './types';
+export type { AnalysisResult, HeaderResult, SSLResult, PortResult, Vulnerability, SecuritySuggestion, SiteContext } from './types';

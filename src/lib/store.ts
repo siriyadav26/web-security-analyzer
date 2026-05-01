@@ -178,6 +178,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       const result: AnalysisResult = await response.json();
+
+      // Also fetch updated history after a successful scan
+      const { fetchHistory } = get();
+      fetchHistory().catch(() => {}); // Don't block on this
+
       set({ result, view: 'dashboard', loadingStep: LOADING_STEPS.length - 1 });
     } catch (error: any) {
       clearInterval(stepInterval);

@@ -30,6 +30,7 @@ model Scan {
   ports           String
   vulnerabilities String
   suggestions     String
+  context         String   @default("{}")
   createdAt       DateTime @default(now())
   userId          String?
   user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)

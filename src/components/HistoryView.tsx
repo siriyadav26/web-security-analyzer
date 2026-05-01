@@ -3,12 +3,20 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
-import { Clock, Shield, Trash2, ChevronRight, Search, AlertTriangle } from 'lucide-react';
+import { Clock, Trash2, ChevronRight, Search, RefreshCw } from 'lucide-react';
 import type { AnalysisResult } from '@/lib/analyzer/types';
 
 export function HistoryView() {
-  const { history, setView, setResult, deleteScan } = useAppStore();
+  const { history, setView, setResult, deleteScan, fetchHistory } = useAppStore();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Refresh history from server
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchHistory();
+    setRefreshing(false);
+  };
 
   const handleViewScan = (scan: any) => {
     const result: AnalysisResult = {
@@ -20,7 +28,13 @@ export function HistoryView() {
       ports: scan.ports,
       vulnerabilities: scan.vulnerabilities,
       suggestions: scan.suggestions,
-      analyzedAt: scan.createdAt,
+      context: scan.context || {
+        hasForms: false,
+        hasLogin: false,
+        isStaticSite: false,
+        detectionNotes: 'Context data not available for this scan.',
+      },
+      analyzedAt: scan.createdAt || scan.analyzedAt,
     };
     setResult(result);
     setView('dashboard');
@@ -61,6 +75,14 @@ export function HistoryView() {
           </motion.div>
           <h1 className="text-2xl font-bold text-white">Scan History</h1>
           <span className="text-sm text-slate-500">({history.length} scans)</span>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-cyber-cyan hover:bg-cyber-cyan/10 transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
 
         {history.length === 0 ? (

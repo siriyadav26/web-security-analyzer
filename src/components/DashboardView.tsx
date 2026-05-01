@@ -9,7 +9,7 @@ import { SSLStatusCard } from '@/components/cards/SSLStatusCard';
 import { OpenPortsCard } from '@/components/cards/OpenPortsCard';
 import { VulnerabilitiesCard } from '@/components/cards/VulnerabilitiesCard';
 import { SuggestionsCard } from '@/components/cards/SuggestionsCard';
-import { Globe, Calendar, Shield } from 'lucide-react';
+import { Globe, Calendar, Shield, FileText, Lock, Eye } from 'lucide-react';
 
 const cardVariants = {
   hidden: { opacity: 0, y: 30, rotateX: 10 },
@@ -69,36 +69,74 @@ export function DashboardView() {
         </div>
       </motion.div>
 
-      {/* Grid of Cards */}
+      {/* Context Banner */}
+      {result.context && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="glass-card p-4 mb-6 border-l-2 border-cyber-blue/30"
+        >
+          <div className="flex items-start gap-3">
+            <Eye className="w-4 h-4 text-cyber-cyan mt-0.5 shrink-0" />
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-medium text-cyber-cyan">Site Context Analysis</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                  result.context.isStaticSite ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'
+                }`}>
+                  {result.context.isStaticSite ? 'Static/Informational' : 'Interactive/Web App'}
+                </span>
+                {result.context.hasLogin && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-medium">
+                    Authentication Detected
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">{result.context.detectionNotes}</p>
+              <p className="text-[10px] text-slate-500 mt-1">
+                Risk assessments are adjusted based on site type — static sites have lower XSS/clickjacking risk than interactive applications.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Grid of Cards — SSL first (highest priority), then headers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* SSL/TLS Card — FIRST (highest priority) */}
         <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <SecurityHeadersCard headers={result.headers} />
-          </motion.div>
-        </motion.div>
-
-        <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible"
-          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
-          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
             <SSLStatusCard ssl={result.ssl} />
           </motion.div>
         </motion.div>
 
-        <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible"
+        {/* Security Headers Card — SECOND */}
+        <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
-          <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <OpenPortsCard ports={result.ports} />
+          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <SecurityHeadersCard headers={result.headers} />
           </motion.div>
         </motion.div>
 
-        <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible"
+        {/* Vulnerabilities Card — THIRD */}
+        <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
-          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+          <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
             <VulnerabilitiesCard vulnerabilities={result.vulnerabilities} />
           </motion.div>
         </motion.div>
 
+        {/* Open Ports Card — FOURTH (informational) */}
+        <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <OpenPortsCard ports={result.ports} />
+          </motion.div>
+        </motion.div>
+
+        {/* Suggestions Card — LAST */}
         <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="lg:col-span-2"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateX: -1 }} transition={{ duration: 0.2 }}>

@@ -2,20 +2,23 @@ import { PortResult } from './types';
 import net from 'net';
 
 const PORTS_TO_CHECK = [
-  { port: 80, service: 'HTTP' },
-  { port: 443, service: 'HTTPS' },
-  { port: 21, service: 'FTP' },
-  { port: 22, service: 'SSH' },
+  { port: 80, service: 'HTTP', risk: 'none' as const, note: 'Standard HTTP port — expected for web servers' },
+  { port: 443, service: 'HTTPS', risk: 'none' as const, note: 'Standard HTTPS port — expected for secure web servers' },
+  { port: 21, service: 'FTP', risk: 'medium' as const, note: 'FTP transmits data in plaintext — consider SFTP/FTPS instead' },
+  { port: 22, service: 'SSH', risk: 'low' as const, note: 'SSH is encrypted but can be targeted for brute-force attacks' },
 ];
 
 function checkPort(hostname: string, port: number, timeout = 3000): Promise<PortResult> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
+    const portInfo = PORTS_TO_CHECK.find(p => p.port === port);
     const result: PortResult = {
       port,
-      service: PORTS_TO_CHECK.find(p => p.port === port)?.service || 'Unknown',
+      service: portInfo?.service || 'Unknown',
       open: false,
       status: 'filtered',
+      risk: portInfo?.risk || 'none',
+      note: portInfo?.note,
     };
 
     socket.setTimeout(timeout);
@@ -57,6 +60,8 @@ export async function checkPorts(url: string): Promise<PortResult[]> {
       service: p.service,
       open: false,
       status: 'filtered' as const,
+      risk: p.risk,
+      note: p.note,
     }));
   }
 

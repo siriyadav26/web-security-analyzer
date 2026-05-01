@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, ChevronDown, Check, X, AlertTriangle } from 'lucide-react';
+import { Shield, ChevronDown, Check, X, AlertTriangle, Info } from 'lucide-react';
 import type { HeaderResult } from '@/lib/analyzer/types';
 
 interface SecurityHeadersCardProps {
@@ -39,6 +39,19 @@ export function SecurityHeadersCard({ headers }: SecurityHeadersCardProps) {
             ? !header.present
             : header.present;
 
+          const getConfidenceBadge = (confidence?: string) => {
+            if (!confidence || confidence === 'high') return null;
+            return (
+              <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                confidence === 'medium'
+                  ? 'bg-yellow-500/10 text-yellow-500'
+                  : 'bg-orange-500/10 text-orange-400'
+              }`}>
+                {confidence} confidence
+              </span>
+            );
+          };
+
           return (
             <motion.div
               key={header.name}
@@ -52,12 +65,14 @@ export function SecurityHeadersCard({ headers }: SecurityHeadersCardProps) {
                   <Check className="w-4 h-4 text-green-400" />
                 ) : header.severity === 'critical' ? (
                   <X className="w-4 h-4 text-red-400" />
-                ) : (
+                ) : header.severity === 'warning' ? (
                   <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                ) : (
+                  <Info className="w-4 h-4 text-blue-400" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-white font-medium">{header.name}</span>
                   {!isGood && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -70,9 +85,15 @@ export function SecurityHeadersCard({ headers }: SecurityHeadersCardProps) {
                       {header.severity}
                     </span>
                   )}
+                  {getConfidenceBadge(header.confidence)}
                 </div>
                 {header.value && (
                   <p className="text-xs text-slate-600 mt-0.5 truncate">{header.value}</p>
+                )}
+                {header.confidenceNote && !isGood && (
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed italic">
+                    {header.confidenceNote}
+                  </p>
                 )}
               </div>
             </motion.div>

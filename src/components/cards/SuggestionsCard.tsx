@@ -53,7 +53,11 @@ export function SuggestionsCard({ suggestions }: SuggestionsCardProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: index * 0.05 }}
-              className="p-4 rounded-lg border border-white/5 hover:border-cyber-blue/20 transition-all"
+              className={`p-4 rounded-lg border transition-all ${
+                suggestion.priority === 'high'
+                  ? 'border-red-500/10 hover:border-red-500/20'
+                  : 'border-white/5 hover:border-cyber-blue/20'
+              }`}
               style={{ background: 'rgba(255,255,255,0.02)' }}
             >
               <div className="flex items-start gap-3">

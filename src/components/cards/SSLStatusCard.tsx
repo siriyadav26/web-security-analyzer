@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Lock, Unlock, AlertTriangle, Check, Clock } from 'lucide-react';
+import { Lock, Unlock, AlertTriangle, Check, X, Clock, ShieldAlert, ShieldCheck, ArrowRight } from 'lucide-react';
 import type { SSLResult } from '@/lib/analyzer/types';
 
 interface SSLStatusCardProps {
@@ -9,25 +9,49 @@ interface SSLStatusCardProps {
 }
 
 export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
-  const isSecure = ssl.enabled && ssl.valid;
+  // Determine SSL status more precisely
+  let statusLabel: string;
+  let statusColor: string;
+  let StatusIcon: typeof Lock;
+
+  if (!ssl.enabled) {
+    statusLabel = 'No HTTPS';
+    statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+    StatusIcon = Unlock;
+  } else if (!ssl.trusted) {
+    statusLabel = ssl.certIssue === 'self-signed' ? 'Self-Signed' :
+                 ssl.certIssue === 'expired' ? 'Expired' :
+                 ssl.certIssue === 'hostname-mismatch' ? 'Hostname Mismatch' :
+                 'Untrusted';
+    statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+    StatusIcon = ShieldAlert;
+  } else if (!ssl.valid) {
+    statusLabel = 'Invalid';
+    statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+    StatusIcon = ShieldAlert;
+  } else if (ssl.daysUntilExpiry !== null && ssl.daysUntilExpiry < 30) {
+    statusLabel = 'Expiring Soon';
+    statusColor = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+    StatusIcon = AlertTriangle;
+  } else {
+    statusLabel = 'Secure';
+    statusColor = 'bg-green-500/10 text-green-400 border-green-500/20';
+    StatusIcon = ShieldCheck;
+  }
 
   return (
     <div className="glass-card p-6 h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          {isSecure ? (
-            <Lock className="w-5 h-5 text-green-400" />
-          ) : (
-            <Unlock className="w-5 h-5 text-red-400" />
-          )}
+          <StatusIcon className={`w-5 h-5 ${
+            !ssl.enabled ? 'text-red-400' :
+            !ssl.trusted ? 'text-red-400' :
+            ssl.valid ? 'text-green-400' : 'text-yellow-400'
+          }`} />
           <h3 className="font-semibold text-white">SSL/TLS Status</h3>
         </div>
-        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
-          isSecure
-            ? 'bg-green-500/10 text-green-400 border-green-500/20'
-            : 'bg-red-500/10 text-red-400 border-red-500/20'
-        }`}>
-          {isSecure ? 'Secure' : 'Not Secure'}
+        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${statusColor}`}>
+          {statusLabel}
         </span>
       </div>
 
@@ -40,7 +64,7 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
             {ssl.enabled ? (
               <Check className="w-4 h-4 text-green-400" />
             ) : (
-              <AlertTriangle className="w-4 h-4 text-red-400" />
+              <X className="w-4 h-4 text-red-400" />
             )}
             <span className={`text-sm ${ssl.enabled ? 'text-green-400' : 'text-red-400'}`}>
               {ssl.enabled ? 'Yes' : 'No'}
@@ -48,20 +72,39 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
           </div>
         </div>
 
-        {/* Certificate Validity */}
-        <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <span className="text-sm text-slate-400">Certificate Valid</span>
-          <div className="flex items-center gap-1.5">
-            {ssl.valid ? (
-              <Check className="w-4 h-4 text-green-400" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 text-red-400" />
-            )}
-            <span className={`text-sm ${ssl.valid ? 'text-green-400' : 'text-red-400'}`}>
-              {ssl.valid ? 'Valid' : 'Invalid'}
-            </span>
+        {/* Certificate Trust */}
+        {ssl.enabled && (
+          <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <span className="text-sm text-slate-400">Certificate Trusted</span>
+            <div className="flex items-center gap-1.5">
+              {ssl.trusted ? (
+                <Check className="w-4 h-4 text-green-400" />
+              ) : (
+                <X className="w-4 h-4 text-red-400" />
+              )}
+              <span className={`text-sm ${ssl.trusted ? 'text-green-400' : 'text-red-400'}`}>
+                {ssl.trusted ? 'Yes' : 'No'}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Certificate Validity */}
+        {ssl.enabled && (
+          <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <span className="text-sm text-slate-400">Certificate Valid</span>
+            <div className="flex items-center gap-1.5">
+              {ssl.valid ? (
+                <Check className="w-4 h-4 text-green-400" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+              )}
+              <span className={`text-sm ${ssl.valid ? 'text-green-400' : 'text-red-400'}`}>
+                {ssl.valid ? 'Valid' : ssl.certIssue || 'Invalid'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Protocol */}
         {ssl.protocol && (
@@ -94,6 +137,23 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
                 {ssl.daysUntilExpiry !== null && (
                   <span className="text-xs text-slate-500 ml-1">({ssl.daysUntilExpiry} days)</span>
                 )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* HTTP→HTTPS Redirect */}
+        {ssl.enabled && ssl.httpToHttpsRedirect !== null && (
+          <div className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <span className="text-sm text-slate-400">HTTP→HTTPS Redirect</span>
+            <div className="flex items-center gap-1.5">
+              {ssl.httpToHttpsRedirect ? (
+                <Check className="w-4 h-4 text-green-400" />
+              ) : (
+                <ArrowRight className="w-4 h-4 text-yellow-400" />
+              )}
+              <span className={`text-sm ${ssl.httpToHttpsRedirect ? 'text-green-400' : 'text-yellow-400'}`}>
+                {ssl.httpToHttpsRedirect ? 'Yes' : 'No'}
               </span>
             </div>
           </div>

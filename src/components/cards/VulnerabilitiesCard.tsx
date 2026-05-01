@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { AlertTriangle, Bug, AlertOctagon, Info } from 'lucide-react';
+import { AlertTriangle, Bug, AlertOctagon, Info, HelpCircle } from 'lucide-react';
 import type { Vulnerability } from '@/lib/analyzer/types';
 
 interface VulnerabilitiesCardProps {
@@ -9,7 +9,7 @@ interface VulnerabilitiesCardProps {
 }
 
 export function VulnerabilitiesCard({ vulnerabilities }: VulnerabilitiesCardProps) {
-  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   const sorted = [...vulnerabilities].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
   const getSeverityIcon = (severity: string) => {
@@ -17,7 +17,8 @@ export function VulnerabilitiesCard({ vulnerabilities }: VulnerabilitiesCardProp
       case 'critical': return <AlertOctagon className="w-4 h-4 text-red-400" />;
       case 'high': return <AlertTriangle className="w-4 h-4 text-orange-400" />;
       case 'medium': return <Bug className="w-4 h-4 text-yellow-400" />;
-      default: return <Info className="w-4 h-4 text-blue-400" />;
+      case 'info': return <Info className="w-4 h-4 text-blue-400" />;
+      default: return <HelpCircle className="w-4 h-4 text-slate-400" />;
     }
   };
 
@@ -26,7 +27,17 @@ export function VulnerabilitiesCard({ vulnerabilities }: VulnerabilitiesCardProp
       case 'critical': return 'bg-red-500/10 text-red-400 border-red-500/20';
       case 'high': return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
       case 'medium': return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
-      default: return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+      case 'info': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+    }
+  };
+
+  const getConfidenceBadge = (confidence: string) => {
+    switch (confidence) {
+      case 'high': return 'bg-green-500/10 text-green-400';
+      case 'medium': return 'bg-yellow-500/10 text-yellow-500';
+      case 'low': return 'bg-orange-500/10 text-orange-400';
+      default: return 'bg-slate-500/10 text-slate-400';
     }
   };
 
@@ -64,13 +75,21 @@ export function VulnerabilitiesCard({ vulnerabilities }: VulnerabilitiesCardProp
               <div className="flex items-start gap-2.5">
                 <div className="mt-0.5 shrink-0">{getSeverityIcon(vuln.severity)}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-sm font-medium text-white">{vuln.type}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${getSeverityBadge(vuln.severity)}`}>
                       {vuln.severity}
                     </span>
+                    <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${getConfidenceBadge(vuln.confidence)}`}>
+                      {vuln.confidence} confidence
+                    </span>
                   </div>
                   <p className="text-xs text-slate-400 leading-relaxed">{vuln.description}</p>
+                  {vuln.confidenceNote && (
+                    <p className="text-[10px] text-slate-500 mt-1 leading-relaxed italic">
+                      Note: {vuln.confidenceNote}
+                    </p>
+                  )}
                   {vuln.recommendation && (
                     <p className="text-xs text-cyber-cyan/80 mt-1.5 leading-relaxed">
                       <span className="font-medium">Fix:</span> {vuln.recommendation}

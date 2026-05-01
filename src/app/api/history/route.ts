@@ -3,6 +3,23 @@ import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
+function parseScan(scan: any) {
+  return {
+    ...scan,
+    headers: JSON.parse(scan.headers),
+    ssl: JSON.parse(scan.ssl),
+    ports: JSON.parse(scan.ports),
+    vulnerabilities: JSON.parse(scan.vulnerabilities),
+    suggestions: JSON.parse(scan.suggestions),
+    context: scan.context ? JSON.parse(scan.context) : {
+      hasForms: false,
+      hasLogin: false,
+      isStaticSite: false,
+      detectionNotes: 'Context data not available for this scan.',
+    },
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -21,14 +38,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      return NextResponse.json({
-        ...scan,
-        headers: JSON.parse(scan.headers),
-        ssl: JSON.parse(scan.ssl),
-        ports: JSON.parse(scan.ports),
-        vulnerabilities: JSON.parse(scan.vulnerabilities),
-        suggestions: JSON.parse(scan.suggestions),
-      });
+      return NextResponse.json(parseScan(scan));
     }
 
     // Get all scans, most recent first
@@ -37,14 +47,7 @@ export async function GET(request: NextRequest) {
       take: 50,
     });
 
-    const parsedScans = scans.map(scan => ({
-      ...scan,
-      headers: JSON.parse(scan.headers),
-      ssl: JSON.parse(scan.ssl),
-      ports: JSON.parse(scan.ports),
-      vulnerabilities: JSON.parse(scan.vulnerabilities),
-      suggestions: JSON.parse(scan.suggestions),
-    }));
+    const parsedScans = scans.map(scan => parseScan(scan));
 
     return NextResponse.json(parsedScans);
   } catch (error: any) {
