@@ -9,53 +9,60 @@ import { SSLStatusCard } from '@/components/cards/SSLStatusCard';
 import { OpenPortsCard } from '@/components/cards/OpenPortsCard';
 import { VulnerabilitiesCard } from '@/components/cards/VulnerabilitiesCard';
 import { SuggestionsCard } from '@/components/cards/SuggestionsCard';
-import { Globe, Calendar } from 'lucide-react';
+import { Globe, Calendar, Shield } from 'lucide-react';
 
 const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 30, rotateX: 10 },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: {
-      delay: i * 0.1,
-      duration: 0.5,
-      ease: 'easeOut',
-    },
+    rotateX: 0,
+    transition: { delay: i * 0.1, duration: 0.6, ease: [0.16, 1, 0.3, 1] },
   }),
 };
 
 export function DashboardView() {
   const { result } = useAppStore();
-
   if (!result) return null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Top Section - Score and URL Info */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="glass-card p-6 sm:p-8 mb-6"
+        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="glass-card p-6 sm:p-8 mb-6 relative overflow-hidden"
+        style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
       >
-        <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10">
-          {/* Score Circle */}
+        {/* Background glow */}
+        <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl pointer-events-none"
+          style={{
+            background: result.score >= 80 ? 'rgba(34, 197, 94, 0.05)' :
+                       result.score >= 50 ? 'rgba(250, 204, 21, 0.05)' :
+                       'rgba(239, 68, 68, 0.05)',
+          }} />
+
+        <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 relative z-10">
           <ScoreCircle score={result.score} riskLevel={result.riskLevel} />
 
-          {/* URL Info */}
           <div className="flex-1 text-center sm:text-left">
             <div className="flex items-center gap-2 justify-center sm:justify-start mb-2">
               <Globe className="w-4 h-4 text-cyber-cyan" />
               <span className="text-sm text-slate-400">Analysis Result</span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 break-all">
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 break-all">
               {result.url}
             </h2>
-            <div className="flex items-center gap-4 justify-center sm:justify-start">
+            <div className="flex items-center gap-4 justify-center sm:justify-start flex-wrap">
               <RiskBadge riskLevel={result.riskLevel} />
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{new Date(result.analyzedAt).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Shield className="w-3.5 h-3.5" />
+                <span>Full Scan</span>
               </div>
             </div>
           </div>
@@ -64,24 +71,39 @@ export function DashboardView() {
 
       {/* Grid of Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible">
-          <SecurityHeadersCard headers={result.headers} />
+        <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <SecurityHeadersCard headers={result.headers} />
+          </motion.div>
         </motion.div>
 
-        <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible">
-          <SSLStatusCard ssl={result.ssl} />
+        <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <SSLStatusCard ssl={result.ssl} />
+          </motion.div>
         </motion.div>
 
-        <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible">
-          <OpenPortsCard ports={result.ports} />
+        <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <OpenPortsCard ports={result.ports} />
+          </motion.div>
         </motion.div>
 
-        <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible">
-          <VulnerabilitiesCard vulnerabilities={result.vulnerabilities} />
+        <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <VulnerabilitiesCard vulnerabilities={result.vulnerabilities} />
+          </motion.div>
         </motion.div>
 
-        <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="lg:col-span-2">
-          <SuggestionsCard suggestions={result.suggestions} />
+        <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="lg:col-span-2"
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
+          <motion.div whileHover={{ rotateX: -1 }} transition={{ duration: 0.2 }}>
+            <SuggestionsCard suggestions={result.suggestions} />
+          </motion.div>
         </motion.div>
       </div>
     </div>

@@ -1,25 +1,54 @@
 import { create } from 'zustand';
 import type { AnalysisResult } from '@/lib/analyzer/types';
 
-export type AppView = 'landing' | 'loading' | 'dashboard' | 'history';
+export type AppView = 'auth' | 'landing' | 'loading' | 'dashboard' | 'history';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
 
 interface AppState {
+  // Navigation
   view: AppView;
+
+  // Auth
+  isAuthenticated: boolean;
+  user: { id: string; email: string; name: string } | null;
+
+  // Analysis
   url: string;
   result: AnalysisResult | null;
   history: AnalysisResult[];
   loadingStep: number;
   error: string | null;
 
+  // Chatbot
+  chatOpen: boolean;
+  chatMessages: ChatMessage[];
+  chatLoading: boolean;
+
+  // Setters
   setView: (view: AppView) => void;
+  setAuthenticated: (auth: boolean, user?: { id: string; email: string; name: string } | null) => void;
   setUrl: (url: string) => void;
   setResult: (result: AnalysisResult | null) => void;
   setHistory: (history: AnalysisResult[]) => void;
   setLoadingStep: (step: number) => void;
   setError: (error: string | null) => void;
+  setChatOpen: (open: boolean) => void;
+
+  // Actions
+  login: (email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
   startAnalysis: (url: string) => Promise<void>;
   fetchHistory: () => Promise<void>;
   deleteScan: (id: string) => Promise<void>;
+  sendChatMessage: (message: string) => Promise<void>;
+  clearChat: () => void;
 }
 
 const LOADING_STEPS = [
@@ -33,24 +62,105 @@ const LOADING_STEPS = [
 ];
 
 export const useAppStore = create<AppState>((set, get) => ({
-  view: 'landing',
+  view: 'auth',
+  isAuthenticated: false,
+  user: null,
   url: '',
   result: null,
   history: [],
   loadingStep: 0,
   error: null,
+  chatOpen: false,
+  chatMessages: [],
+  chatLoading: false,
 
   setView: (view) => set({ view }),
+  setAuthenticated: (auth, user) => set({ isAuthenticated: auth, user: user || null }),
   setUrl: (url) => set({ url }),
   setResult: (result) => set({ result }),
   setHistory: (history) => set({ history }),
   setLoadingStep: (step) => set({ loadingStep: step }),
   setError: (error) => set({ error }),
+  setChatOpen: (open) => set({ chatOpen: open }),
+
+  login: async (email: string, password: string) => {
+    try {
+      const res = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      // Use NextAuth signIn via client
+      const { signIn } = await import('next-auth/react');
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        throw new Error('Invalid email or password');
+      }
+
+      set({
+        isAuthenticated: true,
+        user: { id: '', email, name: email.split('@')[0] },
+        view: 'landing',
+        error: null,
+      });
+    } catch (error: any) {
+      throw new Error(error.message || 'Login failed');
+    }
+  },
+
+  signup: async (name: string, email: string, password: string) => {
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Signup failed');
+      }
+
+      // Auto-login after signup
+      const { signIn } = await import('next-auth/react');
+      await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
+
+      set({
+        isAuthenticated: true,
+        user: { id: data.id, email: data.email, name: data.name },
+        view: 'landing',
+        error: null,
+      });
+    } catch (error: any) {
+      throw new Error(error.message || 'Signup failed');
+    }
+  },
+
+  logout: () => {
+    import('next-auth/react').then(({ signOut }) => signOut({ redirect: false }));
+    set({
+      isAuthenticated: false,
+      user: null,
+      view: 'auth',
+      result: null,
+      history: [],
+    });
+  },
 
   startAnalysis: async (url: string) => {
     set({ view: 'loading', url, loadingStep: 0, error: null });
 
-    // Simulate progress steps
     const stepInterval = setInterval(() => {
       const { loadingStep } = get();
       if (loadingStep < LOADING_STEPS.length - 1) {
@@ -103,6 +213,63 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('Failed to delete scan:', error);
     }
   },
+
+  sendChatMessage: async (message: string) => {
+    const { chatMessages } = get();
+
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+
+    set({
+      chatMessages: [...chatMessages, userMsg],
+      chatLoading: true,
+    });
+
+    try {
+      const apiMessages = [...chatMessages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages }),
+      });
+
+      const data = await response.json();
+
+      const assistantMsg: ChatMessage = {
+        id: `msg-${Date.now()}-reply`,
+        role: 'assistant',
+        content: data.reply || data.error || 'Sorry, I could not generate a response.',
+        timestamp: new Date(),
+      };
+
+      set({
+        chatMessages: [...get().chatMessages, assistantMsg],
+        chatLoading: false,
+      });
+    } catch (error) {
+      const errorMsg: ChatMessage = {
+        id: `msg-${Date.now()}-error`,
+        role: 'assistant',
+        content: 'I\'m experiencing technical difficulties. Please try again.',
+        timestamp: new Date(),
+      };
+
+      set({
+        chatMessages: [...get().chatMessages, errorMsg],
+        chatLoading: false,
+      });
+    }
+  },
+
+  clearChat: () => set({ chatMessages: [] }),
 }));
 
 export { LOADING_STEPS };
