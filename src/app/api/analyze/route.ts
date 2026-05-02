@@ -3,7 +3,7 @@ import { analyzeUrl, validateUrl } from '@/lib/analyzer';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {

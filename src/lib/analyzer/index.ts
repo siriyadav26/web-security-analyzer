@@ -37,11 +37,10 @@ export async function analyzeUrl(url: string): Promise<AnalysisResult> {
   // Phase 1, Step 1: SSL must run first — its result affects header severity (e.g., HSTS relevance)
   const ssl = await checkSSL(normalizedUrl);
 
-  // Phase 1, Step 2: Headers (with SSL context) + Ports (independent)
-  const [headerResult, ports] = await Promise.all([
-    checkHeaders(normalizedUrl, ssl),  // Pass SSL result for HSTS relevance
-    checkPorts(normalizedUrl),
-  ]);
+  // Phase 1, Step 2: Headers (with SSL context), then Ports — run sequentially to avoid
+  // too many simultaneous outbound connections that can crash the Node.js server
+  const headerResult = await checkHeaders(normalizedUrl, ssl);
+  const ports = await checkPorts(normalizedUrl);
 
   const { headers, context, analysisMode } = headerResult;
 
