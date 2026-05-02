@@ -428,6 +428,43 @@ function AuthBackground() {
       <HolographicOverlay />
       <PulseWaves />
 
+      {/* Shield symbol directly behind the sign-in card */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ transform: `translate(-50%, -50%) translateY(${scrollY * 0.04}px)` }}>
+        <motion.div
+          animate={{
+            rotateY: [0, 360],
+            scale: [1, 1.03, 1],
+          }}
+          transition={{
+            rotateY: { duration: 30, repeat: Infinity, ease: 'linear' },
+            scale: { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+          }}
+          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
+        >
+          <svg width="320" height="380" viewBox="0 0 24 28" fill="none" className="drop-shadow-[0_0_40px_rgba(34,211,238,0.15)]">
+            <defs>
+              <linearGradient id="shield-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(34,211,238,0.08)" />
+                <stop offset="50%" stopColor="rgba(59,130,246,0.06)" />
+                <stop offset="100%" stopColor="rgba(168,85,247,0.04)" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M12 2L3 7v7c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z"
+              stroke="rgba(34, 211, 238, 0.25)"
+              strokeWidth="0.5"
+              fill="url(#shield-grad)"
+            />
+            <path
+              d="M12 8a3 3 0 00-3 3v2h6v-2a3 3 0 00-3-3z"
+              stroke="rgba(59, 130, 246, 0.3)"
+              strokeWidth="0.3"
+              fill="rgba(59,130,246,0.08)"
+            />
+          </svg>
+        </motion.div>
+      </div>
+
       {/* Giant rotating shield center with scroll parallax */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ transform: `translate(-50%, -50%) translateY(${scrollY * 0.08}px)` }}>
         <motion.div
