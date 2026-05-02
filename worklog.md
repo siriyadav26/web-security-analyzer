@@ -89,3 +89,31 @@ Stage Summary:
   - self-signed.badssl.com: 42, High Risk, fallback mode ✅
 - Server stability: Fixed OOM crash with streaming body reader (50KB limit)
 - Need to start with NODE_OPTIONS='--max-old-space-size=1024' for stable operation
+
+---
+Task ID: 1
+Agent: main
+Task: Fix all 9 critical issues from user's 10-test-case audit
+
+Work Log:
+- Added HTTP fallback in headerCheck.ts: when HTTPS fails, try HTTP for headers + context
+- Added post-check: if responseBody still null after all attempts, try HTTP just for context detection
+- Fixed API detection: added URL path patterns (/api/, /v1/, /graphql, etc.) and API service indicators in HTML body (REST API, swagger, etc.)
+- Fixed HTTPS wording: SSLStatusCard now shows "Untrusted HTTPS"/"Self-Signed"/"Expired" instead of "No HTTPS" when TLS exists but cert is untrusted
+- Fixed risk score breakdown labels: "HTTPS present but not trusted (Expired certificate)" instead of "Expired certificate (HTTPS unavailable)"
+- Fixed HSTS when HTTPS untrusted: severity=irrelevant, 0 deduction, vulnerability=info only
+- Fixed static site scoring: X-Frame -1 (was -2), CSP -5 (already correct)
+- Fixed cookie analysis: only flag session cookies (session/sess/token/auth/login/sid patterns), non-session cookies get info severity
+- Changed architecture: SSL check runs first, then checkHeaders receives SSL result for HSTS relevance
+- Updated primary risk descriptions to include "HTTPS exists" context
+- Updated limitations text to mention HTTP fallback
+
+Stage Summary:
+- neverssl.com: Context=Static (was Unknown), Headers detected, HSTS=irrelevant, score=46
+- expired.badssl.com: "HTTPS present but not trusted", HSTS=irrelevant, score=46
+- self-signed.badssl.com: Same fix, score=46
+- httpforever.com: HSTS=irrelevant, correct wording, score=55
+- example.com: Static scoring tuned, score=71
+- jsonplaceholder.typicode.com: API detected, CSP irrelevant, score=86
+- httpbin.org: API detected, CSP irrelevant, score=86
+- Baselines stable: github=94, stripe=97, cloudflare=87, google=75

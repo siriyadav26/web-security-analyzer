@@ -1,4 +1,4 @@
-import { HeaderResult, SiteContext, SiteType } from './types';
+import { HeaderResult, SiteContext, SiteType, SSLResult } from './types';
 import https from 'https';
 import http from 'http';
 
@@ -61,7 +61,7 @@ const SECURITY_HEADERS = [
   },
 ];
 
-export async function checkHeaders(url: string): Promise<{
+export async function checkHeaders(url: string, sslResult?: SSLResult): Promise<{
   headers: HeaderResult[];
   context: SiteContext;
   analysisMode: 'secure' | 'fallback';
@@ -70,8 +70,10 @@ export async function checkHeaders(url: string): Promise<{
   let responseBody: string | null = null;
   let responseContentType: string | null = null;
   let sslVerificationFailed = false;
+  let usedHttpFallback = false;
   let analysisMode: 'secure' | 'fallback' = 'secure';
 
+  // === STEP 1: Try HTTPS fetch first ===
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -94,29 +96,8 @@ export async function checkHeaders(url: string): Promise<{
     // Get content type for API detection
     responseContentType = response.headers.get('content-type');
 
-    // Try to get response body for context detection (limit to 50KB to avoid memory issues)
-    try {
-      const reader = response.body?.getReader();
-      if (reader) {
-        const chunks: Uint8Array[] = [];
-        let totalSize = 0;
-        const MAX_BODY_SIZE = 50000; // 50KB limit for context analysis
-        while (totalSize < MAX_BODY_SIZE) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          totalSize += value.length;
-        }
-        reader.cancel().catch(() => {});
-        const decoder = new TextDecoder();
-        responseBody = chunks.map(c => decoder.decode(c, { stream: true })).join('');
-      } else {
-        // Fallback: try text() but it's limited by stream above
-        responseBody = null;
-      }
-    } catch {
-      // Can't read body, that's fine
-    }
+    // Try to get response body for context detection (limit to 50KB)
+    responseBody = await readResponseBody(response);
 
   } catch (error: any) {
     const errorMsg = error?.cause?.code || error?.code || error?.message || '';
@@ -138,51 +119,147 @@ export async function checkHeaders(url: string): Promise<{
       sslVerificationFailed = true;
       analysisMode = 'fallback';
 
+      // Try insecure HTTPS first
       try {
         const insecureResponse = await fetchWithInsecureSSL(url);
         const headerResults = processResponseHeaders(insecureResponse, true);
         results.push(...headerResults);
 
         responseContentType = insecureResponse.headers.get('content-type');
-
-        try {
-          const reader = insecureResponse.body?.getReader();
-          if (reader) {
-            const chunks: Uint8Array[] = [];
-            let totalSize = 0;
-            const MAX_BODY_SIZE = 50000;
-            while (totalSize < MAX_BODY_SIZE) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              chunks.push(value);
-              totalSize += value.length;
-            }
-            reader.cancel().catch(() => {});
-            const decoder = new TextDecoder();
-            responseBody = chunks.map(c => decoder.decode(c, { stream: true })).join('');
-          }
-        } catch {
-          // Can't read body
-        }
+        responseBody = await readResponseBody(insecureResponse);
       } catch {
-        // Even insecure fetch failed — mark all as unreachable
+        // Insecure HTTPS also failed — try HTTP fallback
+        const httpResult = await tryHttpFallback(url);
+        if (httpResult) {
+          usedHttpFallback = true;
+          results.push(...httpResult.headers);
+          responseContentType = httpResult.contentType;
+          responseBody = httpResult.body;
+        } else {
+          // Even HTTP failed — mark all as unreachable
+          fillUnreachableHeaders(results);
+          analysisMode = 'fallback';
+        }
+      }
+    } else {
+      // Non-SSL error (timeout, DNS, connection refused) — try HTTP fallback
+      const httpResult = await tryHttpFallback(url);
+      if (httpResult) {
+        usedHttpFallback = true;
+        analysisMode = 'fallback';
+        results.push(...httpResult.headers);
+        responseContentType = httpResult.contentType;
+        responseBody = httpResult.body;
+      } else {
+        // Even HTTP failed — mark all as unreachable
         fillUnreachableHeaders(results);
         analysisMode = 'fallback';
       }
-    } else {
-      // Non-SSL error (timeout, DNS, etc.) — mark all as unreachable
-      fillUnreachableHeaders(results);
-      analysisMode = 'fallback';
+    }
+  }
+
+  // === POST-CHECK: If we still don't have body for context, try HTTP just for context ===
+  // This handles cases like neverssl.com where insecure HTTPS gives headers but no useful body
+  if (!responseBody) {
+    try {
+      const httpUrl = url.replace(/^https:\/\//, 'http://');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      const httpResp = await fetch(httpUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SecurityAnalyzer/1.0)',
+        },
+      });
+
+      clearTimeout(timeout);
+      responseContentType = responseContentType || httpResp.headers.get('content-type');
+      responseBody = await readResponseBody(httpResp);
+
+      // If we also didn't get headers before, try from this HTTP response
+      if (results.length === 0) {
+        const headerResults = processResponseHeaders(httpResp, false, true);
+        results.push(...headerResults);
+        analysisMode = 'fallback';
+      }
+    } catch {
+      // HTTP also failed for context — keep going with what we have
     }
   }
 
   // Analyze site context from response body + content type
-  const context = analyzeSiteContext(responseBody, responseContentType, sslVerificationFailed);
+  const context = analyzeSiteContext(responseBody, responseContentType, url, sslVerificationFailed || usedHttpFallback);
 
-  // Adjust header severity and relevance based on context
-  adjustSeverityForContext(results, context);
+  // Adjust header severity and relevance based on context AND SSL status
+  adjustSeverityForContext(results, context, sslResult);
 
   return { headers: results, context, analysisMode };
+}
+
+/**
+ * Read response body (limit to 50KB) for context analysis.
+ */
+async function readResponseBody(response: Response): Promise<string | null> {
+  try {
+    const reader = response.body?.getReader();
+    if (reader) {
+      const chunks: Uint8Array[] = [];
+      let totalSize = 0;
+      const MAX_BODY_SIZE = 50000; // 50KB limit for context analysis
+      while (totalSize < MAX_BODY_SIZE) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        totalSize += value.length;
+      }
+      reader.cancel().catch(() => {});
+      const decoder = new TextDecoder();
+      return chunks.map(c => decoder.decode(c, { stream: true })).join('');
+    }
+  } catch {
+    // Can't read body, that's fine
+  }
+  return null;
+}
+
+/**
+ * HTTP Fallback: When HTTPS fails entirely, try plain HTTP to get headers and context.
+ * This is critical for HTTP-only sites like neverssl.com.
+ */
+async function tryHttpFallback(originalUrl: string): Promise<{
+  headers: HeaderResult[];
+  contentType: string | null;
+  body: string | null;
+} | null> {
+  try {
+    // Convert URL to HTTP
+    const httpUrl = originalUrl.replace(/^https:\/\//, 'http://');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(httpUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SecurityAnalyzer/1.0)',
+      },
+    });
+
+    clearTimeout(timeout);
+
+    const headerResults = processResponseHeaders(response, false, true); // isHttpFallback=true
+    const contentType = response.headers.get('content-type');
+    const body = await readResponseBody(response);
+
+    return { headers: headerResults, contentType, body };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -273,10 +350,12 @@ function fetchWithHttpsModule(url: string, maxRedirects: number = 5): Promise<Re
 /**
  * Process response headers and create HeaderResult array.
  */
-function processResponseHeaders(response: Response, isSSLBypass: boolean = false): HeaderResult[] {
+function processResponseHeaders(response: Response, isSSLBypass: boolean = false, isHttpFallback: boolean = false): HeaderResult[] {
   const results: HeaderResult[] = [];
-  const sslNote = isSSLBypass
+  const connectionNote = isSSLBypass
     ? ' (verified over insecure connection due to SSL certificate issues)'
+    : isHttpFallback
+    ? ' (fetched via HTTP fallback — HTTPS unavailable)'
     : '';
 
   for (const header of SECURITY_HEADERS) {
@@ -301,9 +380,15 @@ function processResponseHeaders(response: Response, isSSLBypass: boolean = false
       }
     }
 
-    // Add SSL bypass note if applicable
-    if (isSSLBypass && !isPresent && !confidenceNote) {
+    // Add connection note if applicable
+    if ((isSSLBypass || isHttpFallback) && !isPresent && !confidenceNote) {
       confidenceNote = header.dynamicNote || undefined;
+    }
+
+    // HSTS is irrelevant when fetched via HTTP (it's an HTTPS-only header)
+    if (header.name === 'Strict-Transport-Security' && isHttpFallback) {
+      isPresent = false;
+      confidenceNote = 'HSTS was not detected. Note: HSTS can only be served over HTTPS connections — this site was fetched via HTTP fallback.';
     }
 
     results.push({
@@ -312,9 +397,9 @@ function processResponseHeaders(response: Response, isSSLBypass: boolean = false
       value: effectiveValue || null,
       description: header.description,
       severity: header.severity,
-      confidence: isPresent ? (isSSLBypass ? 'medium' : 'high') : header.defaultConfidence,
-      confidenceNote: !isPresent && confidenceNote ? confidenceNote + sslNote : 
-                      isSSLBypass && isPresent ? 'Verified over connection with SSL certificate issues.' : confidenceNote,
+      confidence: isPresent ? ((isSSLBypass || isHttpFallback) ? 'medium' : 'high') : header.defaultConfidence,
+      confidenceNote: !isPresent && confidenceNote ? confidenceNote + connectionNote : 
+                      (isSSLBypass || isHttpFallback) && isPresent ? `Verified over ${isSSLBypass ? 'connection with SSL certificate issues' : 'HTTP fallback'}.` : confidenceNote,
     });
   }
 
@@ -327,7 +412,7 @@ function processResponseHeaders(response: Response, isSSLBypass: boolean = false
       value: serverHeader,
       description: 'Server version information is exposed in HTTP headers.',
       severity: 'info',
-      confidence: isSSLBypass ? 'medium' : 'high',
+      confidence: (isSSLBypass || isHttpFallback) ? 'medium' : 'high',
       confidenceNote: 'Server header exposure alone is low risk. Version-specific vulnerabilities are required for exploitation.',
     });
   } else {
@@ -337,33 +422,62 @@ function processResponseHeaders(response: Response, isSSLBypass: boolean = false
       value: null,
       description: 'Server version information is hidden (good practice).',
       severity: 'info',
-      confidence: isSSLBypass ? 'medium' : 'high',
+      confidence: (isSSLBypass || isHttpFallback) ? 'medium' : 'high',
     });
   }
 
-  // Check for cookie security
+  // Check for cookie security — only flag session-related cookies
   const setCookieHeaders = response.headers.getSetCookie?.() || [];
   if (setCookieHeaders.length > 0) {
-    const cookiesMissingSecure = setCookieHeaders.filter(
+    // Only flag cookies that look like session identifiers
+    const sessionCookiePatterns = /session|sess|token|auth|login|sid|jsession|phpsessid|asp\.net|csrf|xsrf/i;
+    
+    const sessionCookies = setCookieHeaders.filter(cookie => {
+      const cookieName = cookie.split('=')[0].trim();
+      return sessionCookiePatterns.test(cookieName);
+    });
+
+    const nonSessionCookies = setCookieHeaders.filter(cookie => {
+      const cookieName = cookie.split('=')[0].trim();
+      return !sessionCookiePatterns.test(cookieName);
+    });
+
+    // Only flag session cookies missing security flags
+    const sessionMissingSecure = sessionCookies.filter(
       cookie => !cookie.toLowerCase().includes('secure')
     );
-    const cookiesMissingHttpOnly = setCookieHeaders.filter(
+    const sessionMissingHttpOnly = sessionCookies.filter(
       cookie => !cookie.toLowerCase().includes('httponly')
     );
 
-    const hasInsecureCookies = cookiesMissingSecure.length > 0 || cookiesMissingHttpOnly.length > 0;
+    // Non-session cookies (analytics, preferences) missing flags — low priority
+    const nonSessionMissingSecure = nonSessionCookies.filter(
+      cookie => !cookie.toLowerCase().includes('secure')
+    );
+    const nonSessionMissingHttpOnly = nonSessionCookies.filter(
+      cookie => !cookie.toLowerCase().includes('httponly')
+    );
+
+    const hasInsecureSessionCookies = sessionMissingSecure.length > 0 || sessionMissingHttpOnly.length > 0;
+    const hasInsecureNonSessionCookies = nonSessionMissingSecure.length > 0 || nonSessionMissingHttpOnly.length > 0;
+
+    const hasAnyInsecureCookies = hasInsecureSessionCookies || hasInsecureNonSessionCookies;
 
     results.push({
       name: 'Cookie-Security',
-      present: hasInsecureCookies,
-      value: hasInsecureCookies
-        ? `${cookiesMissingSecure.length} cookie(s) missing Secure flag, ${cookiesMissingHttpOnly.length} missing HttpOnly flag`
+      present: hasAnyInsecureCookies,
+      value: hasAnyInsecureCookies
+        ? hasInsecureSessionCookies
+          ? `${sessionMissingSecure.length} session cookie(s) missing Secure flag, ${sessionMissingHttpOnly.length} missing HttpOnly flag`
+          : `${nonSessionMissingSecure.length} non-session cookie(s) missing Secure flag, ${nonSessionMissingHttpOnly.length} missing HttpOnly flag`
         : 'All cookies have appropriate security flags',
-      description: 'Cookies without Secure and HttpOnly flags can be intercepted or accessed via JavaScript.',
-      severity: 'info',
-      confidence: hasInsecureCookies ? 'low' : (isSSLBypass ? 'medium' : 'high'),
-      confidenceNote: hasInsecureCookies
-        ? 'Cookie flags were observed on the initial response. Some cookies (analytics, preferences) may not require Secure/HttpOnly flags. Session cookies should always have these flags.'
+      description: 'Session cookies without Secure and HttpOnly flags can be intercepted or accessed via JavaScript.',
+      severity: hasInsecureSessionCookies ? 'warning' : 'info',
+      confidence: hasAnyInsecureCookies ? 'low' : ((isSSLBypass || isHttpFallback) ? 'medium' : 'high'),
+      confidenceNote: hasInsecureSessionCookies
+        ? 'Session/authentication cookies are missing security flags. This is a real risk — these cookies should have Secure and HttpOnly flags.'
+        : hasInsecureNonSessionCookies
+        ? 'Only non-session cookies (analytics, preferences) are missing security flags. These are lower risk than session cookies.'
         : undefined,
     });
   }
@@ -391,8 +505,8 @@ function fillUnreachableHeaders(results: HeaderResult[]): void {
 /**
  * Analyze the site to determine its type and context.
  * 
- * Detection logic:
- * 1. API detection: JSON content type, or response is valid JSON, or URL path suggests API
+ * Detection logic (priority order):
+ * 1. API detection: JSON content type, valid JSON body, URL API patterns, or API service indicators in HTML
  * 2. Auth detection: requires password field + form + login keywords (strict)
  * 3. Static detection: no forms, no login, no dynamic scripts
  * 4. Unknown: couldn't fetch content
@@ -400,12 +514,13 @@ function fillUnreachableHeaders(results: HeaderResult[]): void {
 function analyzeSiteContext(
   body: string | null,
   contentType: string | null,
-  sslVerificationFailed: boolean = false
+  url: string,
+  isFallbackMode: boolean = false
 ): SiteContext {
   // If we couldn't fetch the body at all
   if (!body) {
-    const note = sslVerificationFailed
-      ? 'Could not fetch page content — SSL certificate verification failed. Context analysis is limited; classified as Unknown.'
+    const note = isFallbackMode
+      ? 'Could not fetch page content — connection issues prevented content analysis. Context analysis is limited; classified as Unknown.'
       : 'Could not fetch page content for context analysis. Classified as Unknown.';
     return {
       siteType: 'unknown',
@@ -419,7 +534,7 @@ function analyzeSiteContext(
 
   const lowerBody = body.toLowerCase();
 
-  // === STEP 1: API DETECTION ===
+  // === STEP 1: API DETECTION (HIGHEST PRIORITY) ===
   const isJsonContentType = contentType?.includes('application/json') || false;
   let isJsonBody = false;
   try {
@@ -430,17 +545,42 @@ function analyzeSiteContext(
   }
 
   // Check URL for API patterns
-  const urlPath = contentType !== null ? '' : ''; // We don't have URL here, use body heuristics
-  const hasApiIndicators = lowerBody.includes('"endpoint"') ||
-    lowerBody.includes('"status"') && lowerBody.includes('"data"') ||
-    lowerBody.includes('"error"') && lowerBody.includes('"message"');
+  let urlPath = '';
+  try {
+    const parsedUrl = new URL(url);
+    urlPath = parsedUrl.pathname.toLowerCase();
+  } catch {
+    // URL parse failed
+  }
 
-  const isApi = isJsonContentType || isJsonBody || hasApiIndicators;
+  const hasApiUrlPattern = /\/api\/|\/v1\/|\/v2\/|\/v3\/|\/rest\/|\/graphql|\/json|\/endpoint/i.test(urlPath);
+
+  // Check for API service indicators in HTML body (for API testing services like jsonplaceholder, httpbin)
+  const hasApiServiceIndicators = lowerBody.includes('rest api') ||
+    lowerBody.includes('api endpoint') ||
+    lowerBody.includes('api service') ||
+    lowerBody.includes('json api') ||
+    lowerBody.includes('http request') && lowerBody.includes('response service') ||
+    lowerBody.includes('fake rest api') ||
+    lowerBody.includes('api testing') ||
+    lowerBody.includes('free api') ||
+    lowerBody.includes('placeholder') && lowerBody.includes('api') ||
+    lowerBody.includes('swagger') ||
+    lowerBody.includes('openapi');
+
+  // Check for API-style JSON structures in body
+  const hasApiIndicators = lowerBody.includes('"endpoint"') ||
+    (lowerBody.includes('"status"') && lowerBody.includes('"data"')) ||
+    (lowerBody.includes('"error"') && lowerBody.includes('"message"'));
+
+  const isApi = isJsonContentType || isJsonBody || hasApiUrlPattern || hasApiServiceIndicators || hasApiIndicators;
 
   if (isApi) {
     const reasons: string[] = [];
     if (isJsonContentType) reasons.push('Response Content-Type is application/json');
     if (isJsonBody) reasons.push('Response body is valid JSON');
+    if (hasApiUrlPattern) reasons.push('URL path suggests API endpoint');
+    if (hasApiServiceIndicators) reasons.push('Page describes API/service functionality');
     if (hasApiIndicators) reasons.push('Response contains API-style structure');
 
     return {
@@ -521,17 +661,27 @@ function analyzeSiteContext(
 }
 
 /**
- * Adjust severity and relevance of headers based on site context.
+ * Adjust severity and relevance of headers based on site context AND SSL status.
  * 
  * Key rules:
- * - API endpoints: CSP, X-Frame-Options, X-XSS-Protection, Permissions-Policy are IRRELEVANT
+ * - API endpoints: CSP, X-Frame-Options, X-XSS-Protection, Permissions-Policy, Referrer-Policy are IRRELEVANT
  * - API endpoints: HSTS severity is reduced (no browser sessions to protect)
+ * - Untrusted HTTPS: HSTS is irrelevant (nothing to enforce)
  * - Static sites: CSP, X-Frame severity reduced (no user input, no clickjacking risk)
  * - Interactive sites with auth: HSTS and CSP are critical
  */
-function adjustSeverityForContext(headers: HeaderResult[], context: SiteContext): void {
+function adjustSeverityForContext(headers: HeaderResult[], context: SiteContext, sslResult?: SSLResult): void {
+  const hasUntrustedHTTPS = sslResult ? (!sslResult.enabled && sslResult.protocol !== null) : false;
+
   for (const header of headers) {
     if (header.present) continue; // Only adjust missing headers
+
+    // === HSTS IRRELEVANT WHEN HTTPS IS UNTRUSTED ===
+    if (header.name === 'Strict-Transport-Security' && hasUntrustedHTTPS) {
+      header.severity = 'irrelevant';
+      header.confidenceNote = 'HSTS is only effective over trusted HTTPS. Since this site\'s SSL certificate is not trusted by browsers, HSTS would have no effect — address the certificate issue first.';
+      continue;
+    }
 
     // === API-SPECIFIC ADJUSTMENTS ===
     if (context.isApi || context.siteType === 'api') {
@@ -553,8 +703,10 @@ function adjustSeverityForContext(headers: HeaderResult[], context: SiteContext)
           header.confidenceNote = 'Permissions-Policy controls browser features (camera, microphone, etc.). Not applicable to API endpoints.';
           break;
         case 'Strict-Transport-Security':
-          header.severity = 'warning';
-          header.confidenceNote = 'HSTS ensures HTTPS is used for subsequent requests. For APIs consumed by other servers, this is less critical than for browser-facing sites, but still recommended if the API has any browser consumers.';
+          if (!hasUntrustedHTTPS) {
+            header.severity = 'warning';
+            header.confidenceNote = 'HSTS ensures HTTPS is used for subsequent requests. For APIs consumed by other servers, this is less critical than for browser-facing sites, but still recommended if the API has any browser consumers.';
+          }
           break;
         case 'Referrer-Policy':
           header.severity = 'irrelevant';
@@ -588,7 +740,7 @@ function adjustSeverityForContext(headers: HeaderResult[], context: SiteContext)
 
     // === INTERACTIVE SITE WITH AUTH — EMPHASIZE CRITICAL HEADERS ===
     if (context.hasLogin) {
-      if (header.name === 'Strict-Transport-Security') {
+      if (header.name === 'Strict-Transport-Security' && !hasUntrustedHTTPS) {
         header.severity = 'critical';
         header.confidenceNote = 'This site handles authentication. HSTS is critical to protect session cookies from being intercepted over HTTP.';
       }

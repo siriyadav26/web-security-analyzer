@@ -37,13 +37,13 @@ export function calculateRiskScore(
 
   if (!ssl.enabled) {
     if (hasUntrustedTLS) {
-      // TLS server exists but certificate is not trusted — this is different from "no HTTPS at all"
+      // TLS server exists but certificate is not trusted — HTTPS present but broken
       score -= 40;
       const issueLabel = ssl.certIssue === 'self-signed' ? 'Self-signed certificate' :
                         ssl.certIssue === 'expired' ? 'Expired certificate' :
                         ssl.certIssue === 'hostname-mismatch' ? 'Hostname mismatch' :
                         'Untrusted certificate';
-      breakdown.push({ label: `${issueLabel} (HTTPS unavailable)`, points: -40, category: 'ssl' });
+      breakdown.push({ label: `HTTPS present but not trusted (${issueLabel})`, points: -40, category: 'ssl' });
     } else {
       // Truly no HTTPS at all (no TLS server on port 443)
       score -= 40;
@@ -123,7 +123,10 @@ export function calculateRiskScore(
           break;
 
         case 'Strict-Transport-Security':
-          if (ssl.enabled) {
+          if (hasUntrustedTLS) {
+            // HSTS is irrelevant when HTTPS is present but untrusted — nothing to enforce
+            deduction = 0;
+          } else if (ssl.enabled) {
             if (isApi) {
               deduction = -5; // Less critical for APIs but still matters
             } else if (context.hasLogin) {
@@ -132,7 +135,7 @@ export function calculateRiskScore(
               deduction = -10; // Standard
             }
           } else {
-            deduction = -3; // HSTS irrelevant without HTTPS
+            deduction = 0; // HSTS irrelevant without HTTPS — no point enforcing what doesn't work
           }
           break;
 
@@ -140,7 +143,7 @@ export function calculateRiskScore(
           if (isApi) {
             deduction = 0; // Irrelevant for APIs
           } else if (isStaticNoAuth) {
-            deduction = -2;
+            deduction = -1; // Very low risk for static sites without auth
           } else {
             deduction = -5;
           }
@@ -246,6 +249,18 @@ function determinePrimaryRisk(
   if (top.category === 'ssl') {
     if (top.label.includes('No HTTPS')) {
       return 'No HTTPS Encryption — All data is transmitted in plaintext';
+    }
+    if (top.label.includes('HTTPS present but not trusted')) {
+      if (top.label.includes('Self-signed')) {
+        return 'Self-Signed SSL Certificate — HTTPS exists but browsers will show security warnings';
+      }
+      if (top.label.includes('Expired')) {
+        return 'Expired SSL Certificate — HTTPS exists but browsers will block or warn about this site';
+      }
+      if (top.label.includes('Hostname')) {
+        return 'SSL Certificate Hostname Mismatch — HTTPS exists but certificate was issued for a different domain';
+      }
+      return 'Untrusted SSL Certificate — HTTPS exists but certificate chain cannot be verified';
     }
     if (top.label.includes('Self-signed')) {
       return 'Self-Signed SSL Certificate — Browsers will show security warnings';
@@ -452,7 +467,16 @@ export function identifyVulnerabilities(
           break;
 
         case 'Strict-Transport-Security':
-          if (ssl.enabled) {
+          if (hasUntrustedTLS) {
+            // HSTS is irrelevant when HTTPS is present but untrusted
+            vulnerabilities.push({
+              type: 'Missing HSTS',
+              severity: 'info',
+              description: 'No Strict-Transport-Security header detected. However, HSTS is only effective over trusted HTTPS — address the SSL certificate issue first.',
+              recommendation: 'Fix the SSL certificate first, then add the Strict-Transport-Security header.',
+              confidence: 'high',
+            });
+          } else if (ssl.enabled) {
             vulnerabilities.push({
               type: 'Missing HSTS',
               severity: isApi ? 'medium' : 'high',
@@ -714,7 +738,7 @@ export function generateLimitations(
   const limitations: string[] = [];
 
   if (analysisMode === 'fallback') {
-    limitations.push('Header analysis was performed using a fallback method (SSL certificate verification was bypassed). Results may be partially unreliable.');
+    limitations.push('Header analysis was performed using a fallback method (SSL certificate verification was bypassed or HTTP fallback was used). Results may be partially unreliable.');
   }
 
   if (context.siteType === 'unknown') {

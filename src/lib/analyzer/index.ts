@@ -16,13 +16,13 @@ export async function analyzeUrl(url: string): Promise<AnalysisResult> {
 
   // ===== CLEAN DATA FLOW ARCHITECTURE =====
   //
-  // Phase 1: DATA COLLECTION (parallel)
-  //   - SSL/TLS analysis
-  //   - Header extraction + context detection
-  //   - Port scanning
+  // Phase 1: DATA COLLECTION (sequential-parallel hybrid)
+  //   Step 1: SSL/TLS analysis (must complete first — affects header severity)
+  //   Step 2: Header extraction + context detection (needs SSL result)
+  //          + Port scanning (independent, can run parallel with headers)
   //
   // Phase 2: INTERPRETATION
-  //   - Context-based header severity adjustment (done in headerCheck)
+  //   - Context-based header severity adjustment (done in headerCheck using SSL info)
   //   - Vulnerability identification (done in riskScore)
   //
   // Phase 3: SCORING
@@ -34,10 +34,12 @@ export async function analyzeUrl(url: string): Promise<AnalysisResult> {
   //   - Suggestions generation
   //   - Final result assembly
 
-  // Phase 1: Data Collection
-  const [ssl, headerResult, ports] = await Promise.all([
-    checkSSL(normalizedUrl),
-    checkHeaders(normalizedUrl),
+  // Phase 1, Step 1: SSL must run first — its result affects header severity (e.g., HSTS relevance)
+  const ssl = await checkSSL(normalizedUrl);
+
+  // Phase 1, Step 2: Headers (with SSL context) + Ports (independent)
+  const [headerResult, ports] = await Promise.all([
+    checkHeaders(normalizedUrl, ssl),  // Pass SSL result for HSTS relevance
     checkPorts(normalizedUrl),
   ]);
 

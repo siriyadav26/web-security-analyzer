@@ -14,12 +14,23 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
   let statusColor: string;
   let StatusIcon: typeof Lock;
 
-  if (!ssl.enabled) {
+  const hasUntrustedTLS = !ssl.enabled && ssl.protocol !== null;
+
+  if (!ssl.enabled && !hasUntrustedTLS) {
+    // Truly no HTTPS at all (no TLS server on port 443)
     statusLabel = 'No HTTPS';
     statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
     StatusIcon = Unlock;
-  } else if (!ssl.httpsVerified) {
+  } else if (!ssl.enabled && hasUntrustedTLS) {
     // HTTPS exists but certificate is not trusted
+    statusLabel = ssl.certIssue === 'self-signed' ? 'Self-Signed' :
+                 ssl.certIssue === 'expired' ? 'Expired' :
+                 ssl.certIssue === 'hostname-mismatch' ? 'Hostname Mismatch' :
+                 'Untrusted HTTPS';
+    statusColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+    StatusIcon = ShieldAlert;
+  } else if (!ssl.httpsVerified) {
+    // HTTPS enabled but certificate verification failed
     statusLabel = ssl.certIssue === 'self-signed' ? 'Self-Signed' :
                  ssl.certIssue === 'expired' ? 'Expired' :
                  ssl.certIssue === 'hostname-mismatch' ? 'Hostname Mismatch' :
@@ -45,7 +56,8 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <StatusIcon className={`w-5 h-5 ${
-            !ssl.enabled ? 'text-red-400' :
+            !ssl.enabled && !hasUntrustedTLS ? 'text-red-400' :
+            !ssl.enabled && hasUntrustedTLS ? 'text-orange-400' :
             !ssl.trusted ? 'text-red-400' :
             ssl.valid ? 'text-green-400' : 'text-yellow-400'
           }`} />
@@ -64,11 +76,16 @@ export function SSLStatusCard({ ssl }: SSLStatusCardProps) {
           <div className="flex items-center gap-1.5">
             {ssl.httpsVerified ? (
               <Check className="w-4 h-4 text-green-400" />
+            ) : hasUntrustedTLS ? (
+              <AlertTriangle className="w-4 h-4 text-orange-400" />
             ) : (
               <X className="w-4 h-4 text-red-400" />
             )}
-            <span className={`text-sm ${ssl.httpsVerified ? 'text-green-400' : 'text-red-400'}`}>
-              {ssl.httpsVerified ? 'Yes' : 'No'}
+            <span className={`text-sm ${
+              ssl.httpsVerified ? 'text-green-400' : 
+              hasUntrustedTLS ? 'text-orange-400' : 'text-red-400'
+            }`}>
+              {ssl.httpsVerified ? 'Yes' : hasUntrustedTLS ? 'Present (untrusted)' : 'No'}
             </span>
           </div>
         </div>
