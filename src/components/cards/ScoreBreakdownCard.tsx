@@ -10,6 +10,9 @@ interface ScoreBreakdownCardProps {
 }
 
 export function ScoreBreakdownCard({ breakdown, score }: ScoreBreakdownCardProps) {
+  // Guard against undefined/null breakdown
+  const safeBreakdown = breakdown || [];
+
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case 'ssl': return <Lock className="w-3 h-3" />;
@@ -41,14 +44,14 @@ export function ScoreBreakdownCard({ breakdown, score }: ScoreBreakdownCardProps
   };
 
   // Group breakdown by category
-  const grouped = breakdown.reduce((acc, item) => {
+  const grouped = safeBreakdown.reduce((acc, item) => {
     if (!acc[item.category]) acc[item.category] = [];
     acc[item.category].push(item);
     return acc;
   }, {} as Record<string, ScoreBreakdownItem[]>);
 
   const categoryOrder = ['ssl', 'header', 'port', 'context'];
-  const totalDeductions = breakdown.filter(b => b.points < 0).reduce((sum, b) => sum + b.points, 0);
+  const totalDeductions = safeBreakdown.filter(b => b.points < 0).reduce((sum, b) => sum + b.points, 0);
 
   return (
     <div className="glass-card p-6 h-full">

@@ -123,6 +123,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Non-critical: our custom auth is the source of truth
       console.warn('NextAuth session could not be established:', e);
     }
+
+    // Load scan history after login
+    get().fetchHistory().catch(() => {});
   },
 
   signup: async (name: string, email: string, password: string) => {
@@ -157,6 +160,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn('NextAuth session could not be established:', e);
     }
+
+    // Load scan history after signup
+    get().fetchHistory().catch(() => {});
   },
 
   logout: () => {

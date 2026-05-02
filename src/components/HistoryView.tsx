@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import { Clock, Trash2, ChevronRight, Search, RefreshCw } from 'lucide-react';
@@ -10,6 +10,11 @@ export function HistoryView() {
   const { history, setView, setResult, deleteScan, fetchHistory } = useAppStore();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch history on mount so it's always up to date
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   // Refresh history from server
   const handleRefresh = async () => {
@@ -23,18 +28,37 @@ export function HistoryView() {
       url: scan.url,
       score: scan.score,
       riskLevel: scan.riskLevel,
-      headers: scan.headers,
-      ssl: scan.ssl,
-      ports: scan.ports,
-      vulnerabilities: scan.vulnerabilities,
-      suggestions: scan.suggestions,
+      headers: scan.headers || [],
+      ssl: scan.ssl || {
+        enabled: false,
+        trusted: false,
+        valid: false,
+        protocol: null,
+        issuer: null,
+        expiryDate: null,
+        daysUntilExpiry: null,
+        certIssue: null,
+        httpToHttpsRedirect: null,
+        httpsVerified: false,
+        finalUrl: null,
+        error: 'SSL data not available',
+      },
+      ports: scan.ports || [],
+      vulnerabilities: scan.vulnerabilities || [],
+      suggestions: scan.suggestions || [],
       context: scan.context || {
+        siteType: 'unknown',
         hasForms: false,
         hasLogin: false,
         isStaticSite: false,
+        isApi: false,
         detectionNotes: 'Context data not available for this scan.',
       },
-      analyzedAt: scan.createdAt || scan.analyzedAt,
+      analysisMode: scan.analysisMode || 'fallback',
+      limitations: scan.limitations || [],
+      scoreBreakdown: scan.scoreBreakdown || [],
+      primaryRisk: scan.primaryRisk || null,
+      analyzedAt: scan.createdAt || scan.analyzedAt || new Date().toISOString(),
     };
     setResult(result);
     setView('dashboard');

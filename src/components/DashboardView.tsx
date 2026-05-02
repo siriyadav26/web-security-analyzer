@@ -26,8 +26,25 @@ export function DashboardView() {
   const { result } = useAppStore();
   if (!result) return null;
 
+  // Ensure all required fields exist with safe defaults
+  const safeResult: typeof result = {
+    ...result,
+    analysisMode: result.analysisMode || 'fallback',
+    limitations: result.limitations || [],
+    scoreBreakdown: result.scoreBreakdown || [],
+    primaryRisk: result.primaryRisk || null,
+    context: result.context || {
+      siteType: 'unknown',
+      hasForms: false,
+      hasLogin: false,
+      isStaticSite: false,
+      isApi: false,
+      detectionNotes: 'Context data not available.',
+    },
+  };
+
   const siteTypeLabel = (() => {
-    switch (result.context.siteType) {
+    switch (safeResult.context.siteType) {
       case 'api': return 'API Endpoint';
       case 'static': return 'Static/Informational';
       case 'interactive': return 'Interactive Web App';
@@ -37,7 +54,7 @@ export function DashboardView() {
   })();
 
   const siteTypeColor = (() => {
-    switch (result.context.siteType) {
+    switch (safeResult.context.siteType) {
       case 'api': return 'bg-emerald-500/10 text-emerald-400';
       case 'static': return 'bg-blue-500/10 text-blue-400';
       case 'interactive': return 'bg-purple-500/10 text-purple-400';
@@ -59,13 +76,13 @@ export function DashboardView() {
         {/* Background glow */}
         <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl pointer-events-none"
           style={{
-            background: result.score >= 80 ? 'rgba(34, 197, 94, 0.05)' :
-                       result.score >= 50 ? 'rgba(250, 204, 21, 0.05)' :
+            background: safeResult.score >= 80 ? 'rgba(34, 197, 94, 0.05)' :
+                       safeResult.score >= 50 ? 'rgba(250, 204, 21, 0.05)' :
                        'rgba(239, 68, 68, 0.05)',
           }} />
 
         <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 relative z-10">
-          <ScoreCircle score={result.score} riskLevel={result.riskLevel} />
+          <ScoreCircle score={safeResult.score} riskLevel={safeResult.riskLevel} />
 
           <div className="flex-1 text-center sm:text-left">
             <div className="flex items-center gap-2 justify-center sm:justify-start mb-2">
@@ -73,21 +90,21 @@ export function DashboardView() {
               <span className="text-sm text-slate-400">Analysis Result</span>
               {/* Analysis Mode Badge */}
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                result.analysisMode === 'secure'
+                safeResult.analysisMode === 'secure'
                   ? 'bg-green-500/10 text-green-400'
                   : 'bg-yellow-500/10 text-yellow-400'
               }`}>
-                {result.analysisMode === 'secure' ? '🔒 Secure Mode' : '⚠️ Fallback Mode'}
+                {safeResult.analysisMode === 'secure' ? '🔒 Secure Mode' : '⚠️ Fallback Mode'}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 break-all">
-              {result.url}
+              {safeResult.url}
             </h2>
             <div className="flex items-center gap-4 justify-center sm:justify-start flex-wrap">
-              <RiskBadge riskLevel={result.riskLevel} />
+              <RiskBadge riskLevel={safeResult.riskLevel} />
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Calendar className="w-3.5 h-3.5" />
-                <span>{new Date(result.analyzedAt).toLocaleString()}</span>
+                <span>{new Date(safeResult.analyzedAt).toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Shield className="w-3.5 h-3.5" />
@@ -96,12 +113,12 @@ export function DashboardView() {
             </div>
 
             {/* Primary Risk */}
-            {result.primaryRisk && (
+            {safeResult.primaryRisk && (
               <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
                 <ShieldAlert className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
                 <div>
                   <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">Primary Risk</span>
-                  <p className="text-xs text-red-300 leading-relaxed">{result.primaryRisk}</p>
+                  <p className="text-xs text-red-300 leading-relaxed">{safeResult.primaryRisk}</p>
                 </div>
               </div>
             )}
@@ -110,7 +127,7 @@ export function DashboardView() {
       </motion.div>
 
       {/* Context Banner */}
-      {result.context && (
+      {safeResult.context && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -125,26 +142,26 @@ export function DashboardView() {
                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${siteTypeColor}`}>
                   {siteTypeLabel}
                 </span>
-                {result.context.hasLogin && (
+                {safeResult.context.hasLogin && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-medium">
                     Authentication Detected
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400">{result.context.detectionNotes}</p>
+              <p className="text-[11px] text-slate-400">{safeResult.context.detectionNotes}</p>
 
               {/* Context explanation for site type */}
-              {result.context.siteType === 'api' && (
+              {safeResult.context.siteType === 'api' && (
                 <p className="text-[10px] text-emerald-400/70 mt-1">
                   API endpoints have different security requirements than web pages — browser-specific headers (CSP, X-Frame-Options) are not applicable and excluded from scoring.
                 </p>
               )}
-              {result.context.siteType === 'static' && (
+              {safeResult.context.siteType === 'static' && (
                 <p className="text-[10px] text-slate-500 mt-1">
                   Static sites have lower XSS/clickjacking risk — header severities are adjusted accordingly.
                 </p>
               )}
-              {result.context.siteType === 'unknown' && (
+              {safeResult.context.siteType === 'unknown' && (
                 <p className="text-[10px] text-slate-500 mt-1">
                   Could not determine site type. Risk assessments use default severity levels, which may overestimate risk for static sites or APIs.
                 </p>
@@ -155,7 +172,7 @@ export function DashboardView() {
       )}
 
       {/* Analysis Limitations */}
-      {result.limitations && result.limitations.length > 0 && (
+      {safeResult.limitations && safeResult.limitations.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -167,7 +184,7 @@ export function DashboardView() {
             <div>
               <span className="text-xs font-medium text-yellow-400">Analysis Limitations</span>
               <ul className="mt-1 space-y-1">
-                {result.limitations.map((limitation, i) => (
+                {safeResult.limitations.map((limitation, i) => (
                   <li key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
                     <span className="text-yellow-500/60 mt-0.5">•</span>
                     {limitation}
@@ -185,7 +202,7 @@ export function DashboardView() {
         <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <SSLStatusCard ssl={result.ssl} />
+            <SSLStatusCard ssl={safeResult.ssl} />
           </motion.div>
         </motion.div>
 
@@ -193,7 +210,7 @@ export function DashboardView() {
         <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <ScoreBreakdownCard breakdown={result.scoreBreakdown} score={result.score} />
+            <ScoreBreakdownCard breakdown={safeResult.scoreBreakdown} score={safeResult.score} />
           </motion.div>
         </motion.div>
 
@@ -201,7 +218,7 @@ export function DashboardView() {
         <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <SecurityHeadersCard headers={result.headers} siteType={result.context.siteType} />
+            <SecurityHeadersCard headers={safeResult.headers} siteType={safeResult.context.siteType} />
           </motion.div>
         </motion.div>
 
@@ -209,7 +226,7 @@ export function DashboardView() {
         <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <VulnerabilitiesCard vulnerabilities={result.vulnerabilities} />
+            <VulnerabilitiesCard vulnerabilities={safeResult.vulnerabilities} />
           </motion.div>
         </motion.div>
 
@@ -217,7 +234,7 @@ export function DashboardView() {
         <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: -2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <OpenPortsCard ports={result.ports} />
+            <OpenPortsCard ports={safeResult.ports} />
           </motion.div>
         </motion.div>
 
@@ -225,7 +242,7 @@ export function DashboardView() {
         <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible"
           style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}>
           <motion.div whileHover={{ rotateY: 2, rotateX: -1 }} transition={{ duration: 0.2 }}>
-            <SuggestionsCard suggestions={result.suggestions} />
+            <SuggestionsCard suggestions={safeResult.suggestions} />
           </motion.div>
         </motion.div>
       </div>
