@@ -12,14 +12,15 @@ import { DashboardView } from '@/components/DashboardView';
 import { HistoryView } from '@/components/HistoryView';
 import { ChatBot } from '@/components/ChatBot';
 import { SecurityBackground3D } from '@/components/SecurityBackground3D';
-import { AuthProvider } from '@/components/AuthProvider';
 
 function AppContent() {
   const { view, isAuthenticated } = useAppStore();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
-    if (session?.user) {
+    // Only sync from NextAuth session if we're not already authenticated
+    // This prevents the store from being reset when session fetch fails
+    if (session?.user && !isAuthenticated) {
       useAppStore.getState().setAuthenticated(true, {
         id: (session.user as any).id || '',
         email: session.user.email || '',
@@ -29,7 +30,7 @@ function AppContent() {
         useAppStore.getState().setView('landing');
       }
     }
-  }, [session, view]);
+  }, [session, isAuthenticated, view]);
 
   return (
     <div className="min-h-screen relative overflow-hidden" style={{ background: '#0B0F19' }}>
@@ -115,9 +116,5 @@ function AppContent() {
 }
 
 export default function Home() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
+  return <AppContent />;
 }

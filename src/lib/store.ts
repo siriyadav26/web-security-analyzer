@@ -98,11 +98,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const verifyData = await verifyRes.json();
 
-    // Fire-and-forget NextAuth session (don't block on it)
-    import('next-auth/react')
-      .then(({ signIn }) => signIn('credentials', { email, password, redirect: false }))
-      .catch(() => {});
-
+    // Set authenticated state immediately so UI transitions right away
     set({
       isAuthenticated: true,
       user: {
@@ -113,6 +109,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       view: 'landing',
       error: null,
     });
+
+    // Establish NextAuth session in the background (non-blocking)
+    try {
+      const { signIn } = await import('next-auth/react');
+      const result = await signIn('credentials', { email, password, redirect: false });
+      // If NextAuth sign-in failed but we already verified credentials,
+      // keep the user authenticated via our custom flow
+      if (result?.error) {
+        console.warn('NextAuth session creation warning:', result.error);
+      }
+    } catch (e) {
+      // Non-critical: our custom auth is the source of truth
+      console.warn('NextAuth session could not be established:', e);
+    }
   },
 
   signup: async (name: string, email: string, password: string) => {
@@ -129,17 +139,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const data = await res.json();
 
-    // Fire-and-forget NextAuth session
-    import('next-auth/react')
-      .then(({ signIn }) => signIn('credentials', { email, password, redirect: false }))
-      .catch(() => {});
-
+    // Set authenticated state immediately
     set({
       isAuthenticated: true,
       user: { id: data.id, email: data.email, name: data.name },
       view: 'landing',
       error: null,
     });
+
+    // Establish NextAuth session in the background
+    try {
+      const { signIn } = await import('next-auth/react');
+      const result = await signIn('credentials', { email, password, redirect: false });
+      if (result?.error) {
+        console.warn('NextAuth session creation warning:', result.error);
+      }
+    } catch (e) {
+      console.warn('NextAuth session could not be established:', e);
+    }
   },
 
   logout: () => {
