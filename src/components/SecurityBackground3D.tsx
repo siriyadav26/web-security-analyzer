@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore, useMemo } from 'react';
+import { useSyncExternalStore, useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppView } from '@/lib/store';
 
@@ -21,15 +21,391 @@ function seededRandom(seed: number): () => number {
   };
 }
 
+// Scroll position hook for parallax
+function useScrollY(): number {
+  const [scrollY, setScrollY] = useState(0);
+  useEffect(() => {
+    const handleScroll = () => setScrollY(window.scrollY);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  return scrollY;
+}
+
 interface SecurityBackground3DProps {
   view: AppView;
 }
 
 /* ============================================================
-   AUTH BACKGROUND — Giant rotating shield + lock matrix
+   CIRCUIT BOARD — Scrolling motherboard traces with glowing nodes
+   ============================================================ */
+function CircuitBoard() {
+  const scrollY = useScrollY();
+  const rand = useMemo(() => seededRandom(77), []);
+
+  const traces = useMemo(() => {
+    const r = seededRandom(33);
+    return Array.from({ length: 18 }, (_, i) => ({
+      id: i,
+      x1: r() * 100,
+      y1: r() * 100,
+      x2: r() * 100,
+      y2: r() * 100,
+      midX: r() * 100,
+      delay: r() * 5,
+      duration: 3 + r() * 4,
+    }));
+  }, []);
+
+  const nodes = useMemo(() => {
+    const r = seededRandom(55);
+    return Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      x: r() * 100,
+      y: r() * 100,
+      size: 2 + r() * 4,
+      pulseSpeed: 2 + r() * 3,
+      delay: r() * 3,
+      brightness: 0.3 + r() * 0.5,
+    }));
+  }, []);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden" style={{ transform: `translateY(${scrollY * 0.05}px)` }}>
+      <svg className="absolute inset-0 w-full h-full" style={{ minHeight: '120vh' }}>
+        <defs>
+          <filter id="glow-circuit">
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {/* Circuit traces */}
+        {traces.map((trace) => (
+          <motion.path
+            key={`trace-${trace.id}`}
+            d={`M${trace.x1}% ${trace.y1}% Q${trace.midX}% ${trace.y1}% ${trace.midX}% ${trace.y2}% T${trace.x2}% ${trace.y2}%`}
+            fill="none"
+            stroke="rgba(34, 211, 238, 0.04)"
+            strokeWidth="1"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: [0, 0.6, 0.3] }}
+            transition={{ duration: trace.duration, repeat: Infinity, ease: 'easeInOut', delay: trace.delay }}
+            filter="url(#glow-circuit)"
+          />
+        ))}
+        {/* Glowing nodes */}
+        {nodes.map((node) => (
+          <motion.circle
+            key={`cnode-${node.id}`}
+            cx={`${node.x}%`}
+            cy={`${node.y}%`}
+            r={node.size}
+            fill={`rgba(34, 211, 238, ${node.brightness * 0.15})`}
+            animate={{
+              r: [node.size, node.size * 2, node.size],
+              opacity: [0.3, 0.8, 0.3],
+              fill: [
+                `rgba(34, 211, 238, ${node.brightness * 0.15})`,
+                `rgba(59, 130, 246, ${node.brightness * 0.25})`,
+                `rgba(34, 211, 238, ${node.brightness * 0.15})`,
+              ],
+            }}
+            transition={{ duration: node.pulseSpeed, repeat: Infinity, ease: 'easeInOut', delay: node.delay }}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/* ============================================================
+   FLOATING PARTICLES — Cyber particles that scroll with parallax
+   ============================================================ */
+function FloatingParticles({ count = 40, speed = 1 }: { count?: number; speed?: number }) {
+  const scrollY = useScrollY();
+  const particles = useMemo(() => {
+    const r = seededRandom(99);
+    return Array.from({ length: count }, (_, i) => ({
+      id: i,
+      x: r() * 100,
+      startY: -10 + r() * 120,
+      size: 1 + r() * 3,
+      speed: (3 + r() * 5) * speed,
+      drift: -30 + r() * 60,
+      parallax: 0.02 + r() * 0.15,
+      hue: r() > 0.6 ? 'cyan' : r() > 0.3 ? 'blue' : 'purple',
+      delay: r() * 8,
+      opacity: 0.1 + r() * 0.4,
+    }));
+  }, [count, speed]);
+
+  const colorMap: Record<string, { bg: string; glow: string }> = {
+    cyan: { bg: 'rgba(34, 211, 238, 0.6)', glow: '0 0 8px rgba(34, 211, 238, 0.4)' },
+    blue: { bg: 'rgba(59, 130, 246, 0.6)', glow: '0 0 8px rgba(59, 130, 246, 0.4)' },
+    purple: { bg: 'rgba(168, 85, 247, 0.6)', glow: '0 0 8px rgba(168, 85, 247, 0.4)' },
+  };
+
+  return (
+    <>
+      {particles.map((p) => (
+        <motion.div
+          key={`particle-${p.id}`}
+          className="absolute rounded-full"
+          style={{
+            left: `${p.x}%`,
+            top: `${p.startY}%`,
+            width: p.size,
+            height: p.size,
+            background: colorMap[p.hue].bg,
+            boxShadow: colorMap[p.hue].glow,
+            transform: `translateY(${scrollY * p.parallax}px)`,
+          }}
+          animate={{
+            y: [0, -80 * speed, 0],
+            x: [0, p.drift, 0],
+            opacity: [0, p.opacity, 0],
+          }}
+          transition={{
+            duration: p.speed,
+            repeat: Infinity,
+            ease: 'easeInOut',
+            delay: p.delay,
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+/* ============================================================
+   DATA STREAM — Scrolling binary/hex data columns
+   ============================================================ */
+function DataStreams() {
+  const scrollY = useScrollY();
+  const streams = useMemo(() => {
+    const r = seededRandom(42);
+    return Array.from({ length: 12 }, (_, i) => ({
+      id: i,
+      left: 3 + i * 8 + r() * 3,
+      text: Array.from({ length: 60 }, () =>
+        r() > 0.5 ? (r() > 0.5 ? '1' : '0') : (r() > 0.5 ? 'A' : 'F')
+      ).join(' '),
+      speed: 10 + r() * 12,
+      delay: r() * 5,
+      parallax: 0.03 + r() * 0.1,
+      opacity: 0.03 + r() * 0.04,
+    }));
+  }, []);
+
+  return (
+    <>
+      {streams.map((stream) => (
+        <motion.div
+          key={`dstream-${stream.id}`}
+          className="absolute font-mono text-[10px] whitespace-nowrap select-none"
+          style={{
+            left: `${stream.left}%`,
+            top: 0,
+            writingMode: 'vertical-lr',
+            letterSpacing: '0.25em',
+            color: `rgba(34, 211, 238, ${stream.opacity})`,
+            transform: `translateY(${scrollY * stream.parallax}px)`,
+          }}
+          animate={{ y: ['0vh', '-60vh'] }}
+          transition={{
+            duration: stream.speed,
+            repeat: Infinity,
+            ease: 'linear',
+            delay: stream.delay,
+          }}
+        >
+          {stream.text}
+        </motion.div>
+      ))}
+    </>
+  );
+}
+
+/* ============================================================
+   SCROLLING GRID — Perspective grid that scrolls with depth
+   ============================================================ */
+function PerspectiveGrid() {
+  const scrollY = useScrollY();
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden"
+      style={{
+        opacity: 0.025,
+        transform: `translateY(${scrollY * 0.02}px) perspective(800px) rotateX(5deg)`,
+        transformOrigin: 'center bottom',
+      }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(90deg, #22D3EE 1px, transparent 1px),
+            linear-gradient(0deg, #22D3EE 1px, transparent 1px)
+          `,
+          backgroundSize: '80px 80px',
+          minHeight: '150vh',
+        }}
+      />
+    </div>
+  );
+}
+
+/* ============================================================
+   3D FLOATING SECURITY ICONS — Shields, Locks on platforms
+   ============================================================ */
+function FloatingSecurityIcons() {
+  const scrollY = useScrollY();
+  const icons = useMemo(() => {
+    const r = seededRandom(202);
+    return Array.from({ length: 6 }, (_, i) => ({
+      id: i,
+      x: 10 + r() * 80,
+      y: 10 + r() * 80,
+      type: i % 3, // 0 = shield, 1 = lock, 2 = fingerprint
+      scale: 0.6 + r() * 0.8,
+      parallax: 0.05 + r() * 0.2,
+      rotDuration: 15 + r() * 25,
+      floatDuration: 4 + r() * 3,
+    }));
+  }, []);
+
+  return (
+    <>
+      {icons.map((icon) => (
+        <motion.div
+          key={`sec-icon-${icon.id}`}
+          className="absolute"
+          style={{
+            left: `${icon.x}%`,
+            top: `${icon.y}%`,
+            transform: `translateY(${scrollY * icon.parallax}px)`,
+            perspective: '600px',
+          }}
+          animate={{
+            y: [0, -20, 0],
+            rotateY: [0, 360],
+          }}
+          transition={{
+            y: { duration: icon.floatDuration, repeat: Infinity, ease: 'easeInOut' },
+            rotateY: { duration: icon.rotDuration, repeat: Infinity, ease: 'linear' },
+          }}
+        >
+          <div style={{ opacity: 0.05, transform: `scale(${icon.scale})` }}>
+            {icon.type === 0 && (
+              <svg width="80" height="95" viewBox="0 0 24 28" fill="none">
+                <path d="M12 2L3 7v7c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z"
+                  stroke="#22D3EE" strokeWidth="1" fill="rgba(34,211,238,0.05)" />
+              </svg>
+            )}
+            {icon.type === 1 && (
+              <svg width="70" height="85" viewBox="0 0 24 30" fill="none">
+                <rect x="3" y="14" width="18" height="12" rx="2" stroke="#3B82F6" strokeWidth="1" fill="rgba(59,130,246,0.05)" />
+                <path d="M8 14V10a4 4 0 018 0v4" stroke="#22D3EE" strokeWidth="1" fill="none" />
+              </svg>
+            )}
+            {icon.type === 2 && (
+              <svg width="70" height="70" viewBox="0 0 24 24" fill="none">
+                <path d="M12 10a2 2 0 012 2c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2z" stroke="#22D3EE" strokeWidth="1" />
+                <path d="M12 2C8 2 4 6 4 10c0 4 3 8 8 12 5-4 8-8 8-12 0-4-4-8-8-8z" stroke="#3B82F6" strokeWidth="0.8" fill="rgba(59,130,246,0.03)" />
+              </svg>
+            )}
+          </div>
+        </motion.div>
+      ))}
+    </>
+  );
+}
+
+/* ============================================================
+   HOLOGRAPHIC OVERLAY — Floating data readouts
+   ============================================================ */
+function HolographicOverlay() {
+  const scrollY = useScrollY();
+  const displays = useMemo(() => {
+    const r = seededRandom(303);
+    return Array.from({ length: 4 }, (_, i) => ({
+      id: i,
+      x: r() > 0.5 ? 5 + r() * 20 : 70 + r() * 20,
+      y: 15 + r() * 70,
+      parallax: 0.04 + r() * 0.12,
+      number: Math.floor(r() * 99999999).toString().padStart(8, '0'),
+      label: ['ENCRYPTED', 'SECURE', 'VERIFIED', 'ACTIVE'][i],
+      pulseSpeed: 3 + r() * 2,
+    }));
+  }, []);
+
+  return (
+    <>
+      {displays.map((d) => (
+        <motion.div
+          key={`holo-${d.id}`}
+          className="absolute"
+          style={{
+            left: `${d.x}%`,
+            top: `${d.y}%`,
+            transform: `translateY(${scrollY * d.parallax}px)`,
+          }}
+          animate={{
+            opacity: [0.03, 0.08, 0.03],
+            scale: [0.98, 1.02, 0.98],
+          }}
+          transition={{ duration: d.pulseSpeed, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <div className="flex flex-col items-end gap-0.5 select-none">
+            <span className="font-mono text-[8px] tracking-[0.3em] text-cyan-400/40 uppercase">{d.label}</span>
+            <span className="font-mono text-[10px] tracking-[0.15em] text-cyan-300/25">{d.number}</span>
+            <div className="w-16 h-px bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent" />
+          </div>
+        </motion.div>
+      ))}
+    </>
+  );
+}
+
+/* ============================================================
+   SCROLLING PULSE WAVES — Concentric rings that scroll
+   ============================================================ */
+function PulseWaves() {
+  const scrollY = useScrollY();
+
+  return (
+    <div className="absolute inset-0 overflow-hidden" style={{ transform: `translateY(${scrollY * 0.03}px)` }}>
+      {[0, 1, 2, 3].map((i) => (
+        <motion.div
+          key={`pulse-wave-${i}`}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
+          style={{
+            width: 200 + i * 200,
+            height: 200 + i * 200,
+            borderColor: `rgba(34, 211, 238, ${0.04 - i * 0.008})`,
+          }}
+          animate={{
+            scale: [1, 1.15, 1],
+            opacity: [0.3, 0.7, 0.3],
+            rotateX: [0, 25, 0],
+          }}
+          transition={{ duration: 5 + i * 0.8, repeat: Infinity, ease: 'easeInOut', delay: i * 0.6 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================
+   AUTH BACKGROUND — Giant rotating shield + lock matrix + scrolling
    ============================================================ */
 function AuthBackground() {
-  // Pre-generate lock positions deterministically
+  const scrollY = useScrollY();
+
   const locks = useMemo(() => {
     const rand = seededRandom(101);
     return Array.from({ length: 30 }, (_, i) => ({
@@ -39,13 +415,21 @@ function AuthBackground() {
       duration1: 6 + (i % 5) * 0.5,
       duration2: 20 + (i % 5) * 2,
       duration3: 4,
+      parallax: 0.02 + rand() * 0.15,
     }));
   }, []);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      {/* Giant rotating shield center */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+      <CircuitBoard />
+      <DataStreams />
+      <PerspectiveGrid />
+      <FloatingParticles count={25} />
+      <HolographicOverlay />
+      <PulseWaves />
+
+      {/* Giant rotating shield center with scroll parallax */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ transform: `translate(-50%, -50%) translateY(${scrollY * 0.08}px)` }}>
         <motion.div
           animate={{
             rotateY: [0, 360],
@@ -75,12 +459,12 @@ function AuthBackground() {
         </motion.div>
       </div>
 
-      {/* Lock matrix - rows of floating locks */}
+      {/* Lock matrix with scroll parallax */}
       {locks.map((lock) => (
         <motion.div
           key={`lock-${lock.id}`}
           className="absolute"
-          style={{ left: `${lock.left}%`, top: `${lock.top}%` }}
+          style={{ left: `${lock.left}%`, top: `${lock.top}%`, transform: `translateY(${scrollY * lock.parallax}px)` }}
           animate={{
             y: [0, -15 - (lock.id % 3) * 5, 0],
             rotateY: [0, 180, 360],
@@ -104,7 +488,7 @@ function AuthBackground() {
         <motion.div
           key={`ring-${i}`}
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyber-cyan/20"
-          style={{ width: 300 + i * 200, height: 300 + i * 200 }}
+          style={{ width: 300 + i * 200, height: 300 + i * 200, transform: `translate(-50%, -50%) translateY(${scrollY * 0.05}px)` }}
           animate={{
             scale: [1, 1.1, 1],
             opacity: [0.05, 0.12, 0.05],
@@ -113,20 +497,16 @@ function AuthBackground() {
           transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.8 }}
         />
       ))}
-
-      {/* Grid overlay */}
-      <div className="absolute inset-0 opacity-[0.02]" style={{
-        backgroundImage: 'linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)',
-        backgroundSize: '80px 80px',
-      }} />
     </div>
   );
 }
 
 /* ============================================================
-   LANDING BACKGROUND — 3D globe network with data nodes
+   LANDING BACKGROUND — 3D globe network with data nodes + scrolling
    ============================================================ */
 function LandingBackground() {
+  const scrollY = useScrollY();
+
   const nodes = useMemo(() => {
     return Array.from({ length: 20 }, (_, i) => {
       const phi = Math.acos(-1 + (2 * i) / 20);
@@ -141,7 +521,6 @@ function LandingBackground() {
     });
   }, []);
 
-  // Pre-calculate connection line positions
   const connections = useMemo(() => {
     return nodes.slice(0, 10).map((node, i) => {
       const next = nodes[(i + 1) % 10];
@@ -157,14 +536,21 @@ function LandingBackground() {
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      {/* 3D Rotating Globe */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ perspective: '1200px' }}>
+      <CircuitBoard />
+      <DataStreams />
+      <PerspectiveGrid />
+      <FloatingParticles count={35} speed={1.2} />
+      <FloatingSecurityIcons />
+      <HolographicOverlay />
+
+      {/* 3D Rotating Globe with scroll parallax */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ perspective: '1200px', transform: `translate(-50%, -50%) translateY(${scrollY * 0.06}px)` }}>
         <motion.div
           animate={{ rotateY: [0, 360] }}
           transition={{ duration: 60, repeat: Infinity, ease: 'linear' }}
           style={{ transformStyle: 'preserve-3d' }}
         >
-          {/* Globe wireframe circles */}
           {Array.from({ length: 8 }).map((_, i) => (
             <motion.div
               key={`globe-circle-${i}`}
@@ -180,7 +566,6 @@ function LandingBackground() {
             />
           ))}
 
-          {/* Network nodes on globe */}
           {nodes.map((node) => (
             <motion.div
               key={`node-${node.id}`}
@@ -204,7 +589,6 @@ function LandingBackground() {
             />
           ))}
 
-          {/* Connection lines (static SVG lines, no framer-motion on SVG elements) */}
           <svg width="600" height="600" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20">
             {connections.map((conn) => (
               <line
@@ -221,39 +605,10 @@ function LandingBackground() {
         </motion.div>
       </div>
 
-      {/* Floating data packets */}
-      {Array.from({ length: 8 }).map((_, i) => (
-        <motion.div
-          key={`packet-${i}`}
-          className="absolute w-2 h-2 rounded-sm"
-          style={{
-            background: 'rgba(59, 130, 246, 0.4)',
-            boxShadow: '0 0 6px rgba(59, 130, 246, 0.3)',
-            left: `${10 + (i * 12) % 80}%`,
-            top: `${20 + (i * 17) % 60}%`,
-          }}
-          animate={{
-            x: [0, 100 + i * 30, 0],
-            y: [0, -50 + i * 10, 0],
-            opacity: [0, 0.6, 0],
-          }}
-          transition={{ duration: 6 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.7 }}
-        />
-      ))}
-
-      {/* Hexagonal grid overlay (static SVG) */}
-      <svg className="absolute inset-0 w-full h-full opacity-[0.03]">
-        <defs>
-          <pattern id="hexGrid" width="60" height="52" patternUnits="userSpaceOnUse">
-            <polygon points="30,0 60,15 60,37 30,52 0,37 0,15" fill="none" stroke="#3B82F6" strokeWidth="0.5" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#hexGrid)" />
-      </svg>
-
-      {/* Large corner shields */}
+      {/* Large corner shields with scroll parallax */}
       <motion.div
         className="absolute -top-20 -left-20 opacity-[0.04]"
+        style={{ transform: `translateY(${scrollY * 0.1}px)` }}
         animate={{ rotateZ: [0, 5, 0], scale: [1, 1.05, 1] }}
         transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       >
@@ -264,6 +619,7 @@ function LandingBackground() {
       </motion.div>
       <motion.div
         className="absolute -bottom-20 -right-20 opacity-[0.04]"
+        style={{ transform: `translateY(${scrollY * 0.15}px)` }}
         animate={{ rotateZ: [0, -5, 0], scale: [1, 1.05, 1] }}
         transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       >
@@ -277,10 +633,11 @@ function LandingBackground() {
 }
 
 /* ============================================================
-   LOADING BACKGROUND — 3D Radar scanner + data streams
+   LOADING BACKGROUND — 3D Radar scanner + scrolling data streams
    ============================================================ */
 function LoadingBackground() {
-  // Pre-generate binary streams deterministically
+  const scrollY = useScrollY();
+
   const streams = useMemo(() => {
     const rand = seededRandom(42);
     return Array.from({ length: 10 }, (_, i) => ({
@@ -292,13 +649,18 @@ function LoadingBackground() {
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+      <CircuitBoard />
+      <DataStreams />
+      <PerspectiveGrid />
+      <FloatingParticles count={30} speed={1.5} />
+
       {/* Giant radar scanner center */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ perspective: '800px' }}>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ perspective: '800px', transform: `translate(-50%, -50%) translateY(${scrollY * 0.05}px)` }}>
         <motion.div
           style={{ transformStyle: 'preserve-3d' }}
           animate={{ rotateX: [60, 60] }}
         >
-          {/* Radar circles */}
           {[0, 1, 2, 3, 4].map((i) => (
             <motion.div
               key={`radar-ring-${i}`}
@@ -313,7 +675,6 @@ function LoadingBackground() {
             />
           ))}
 
-          {/* Radar sweep beam */}
           <motion.div
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ width: 500, height: 500, transformStyle: 'preserve-3d' }}
@@ -341,7 +702,6 @@ function LoadingBackground() {
             />
           </motion.div>
 
-          {/* Center dot */}
           <motion.div
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-cyber-cyan/50"
             animate={{
@@ -353,7 +713,7 @@ function LoadingBackground() {
         </motion.div>
       </div>
 
-      {/* Data streams - vertical falling binary (deterministic) */}
+      {/* Data streams with scroll parallax */}
       {streams.map((stream) => (
         <motion.div
           key={`stream-${stream.id}`}
@@ -363,6 +723,7 @@ function LoadingBackground() {
             top: 0,
             writingMode: 'vertical-lr',
             letterSpacing: '0.3em',
+            transform: `translateY(${scrollY * 0.05}px)`,
           }}
           animate={{ y: ['0vh', '100vh'] }}
           transition={{
@@ -381,17 +742,18 @@ function LoadingBackground() {
         <motion.div
           key={`pulse-ring-${i}`}
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyber-cyan/30"
+          style={{ transform: `translate(-50%, -50%) translateY(${scrollY * 0.04}px)` }}
           animate={{ scale: [0.5, 3], opacity: [0.4, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: 'easeOut', delay: i * 1 }}
         />
       ))}
 
-      {/* Floating scan targets */}
+      {/* Floating scan targets with scroll parallax */}
       {Array.from({ length: 5 }).map((_, i) => (
         <motion.div
           key={`target-${i}`}
           className="absolute"
-          style={{ left: `${15 + i * 18}%`, top: `${20 + (i * 13) % 60}%` }}
+          style={{ left: `${15 + i * 18}%`, top: `${20 + (i * 13) % 60}%`, transform: `translateY(${scrollY * (0.03 + i * 0.02)}px)` }}
           animate={{ scale: [0.8, 1.1, 0.8], opacity: [0.05, 0.15, 0.05] }}
           transition={{ duration: 3 + i * 0.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
         >
@@ -409,13 +771,23 @@ function LoadingBackground() {
 }
 
 /* ============================================================
-   DASHBOARD BACKGROUND — 3D data matrix + flowing streams
+   DASHBOARD BACKGROUND — 3D data matrix + scrolling streams
    ============================================================ */
 function DashboardBackground() {
+  const scrollY = useScrollY();
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      {/* 3D Rotating data cube */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ perspective: '1000px' }}>
+      <CircuitBoard />
+      <DataStreams />
+      <PerspectiveGrid />
+      <FloatingParticles count={30} />
+      <FloatingSecurityIcons />
+      <HolographicOverlay />
+
+      {/* 3D Rotating data cube with scroll parallax */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ perspective: '1000px', transform: `translate(-50%, -50%) translateY(${scrollY * 0.06}px)` }}>
         <motion.div
           animate={{ rotateX: [0, 360], rotateY: [0, 360] }}
           transition={{
@@ -449,7 +821,7 @@ function DashboardBackground() {
         </motion.div>
       </div>
 
-      {/* Data flow streams - horizontal */}
+      {/* Data flow streams - horizontal with scroll parallax */}
       {Array.from({ length: 6 }).map((_, i) => (
         <motion.div
           key={`hstream-${i}`}
@@ -458,13 +830,14 @@ function DashboardBackground() {
             top: `${15 + i * 15}%`,
             left: 0, right: 0,
             background: `linear-gradient(90deg, transparent 0%, rgba(34,211,238,${0.03 + i * 0.01}) 30%, rgba(59,130,246,${0.03 + i * 0.01}) 70%, transparent 100%)`,
+            transform: `translateY(${scrollY * (0.02 + i * 0.01)}px)`,
           }}
           animate={{ opacity: [0.3, 0.7, 0.3], scaleX: [0.8, 1, 0.8] }}
           transition={{ duration: 4 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
         />
       ))}
 
-      {/* Data flow streams - vertical */}
+      {/* Data flow streams - vertical with scroll parallax */}
       {Array.from({ length: 4 }).map((_, i) => (
         <motion.div
           key={`vstream-${i}`}
@@ -473,13 +846,14 @@ function DashboardBackground() {
             left: `${20 + i * 20}%`,
             top: 0, bottom: 0,
             background: `linear-gradient(0deg, transparent 0%, rgba(59,130,246,${0.02 + i * 0.01}) 30%, rgba(34,211,238,${0.02 + i * 0.01}) 70%, transparent 100%)`,
+            transform: `translateX(${scrollY * 0.01}px)`,
           }}
           animate={{ opacity: [0.2, 0.6, 0.2], scaleY: [0.8, 1, 0.8] }}
           transition={{ duration: 5 + i * 0.4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.5 }}
         />
       ))}
 
-      {/* Floating data nodes */}
+      {/* Floating data nodes with scroll parallax */}
       {Array.from({ length: 12 }).map((_, i) => (
         <motion.div
           key={`dnode-${i}`}
@@ -489,29 +863,33 @@ function DashboardBackground() {
             top: `${10 + (i * 12) % 80}%`,
             background: i % 3 === 0 ? 'rgba(34,211,238,0.3)' : i % 3 === 1 ? 'rgba(59,130,246,0.3)' : 'rgba(168,85,247,0.3)',
             boxShadow: `0 0 6px ${i % 3 === 0 ? 'rgba(34,211,238,0.2)' : i % 3 === 1 ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)'}`,
+            transform: `translateY(${scrollY * (0.03 + (i % 4) * 0.02)}px)`,
           }}
           animate={{ y: [0, -20 + i * 2, 0], x: [0, 10 - i, 0], opacity: [0.3, 0.7, 0.3] }}
           transition={{ duration: 5 + i * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
         />
       ))}
-
-      {/* Dashboard grid */}
-      <div className="absolute inset-0 opacity-[0.015]" style={{
-        backgroundImage: 'linear-gradient(90deg, #22D3EE 1px, transparent 1px), linear-gradient(0deg, #22D3EE 1px, transparent 1px)',
-        backgroundSize: '100px 100px',
-      }} />
     </div>
   );
 }
 
 /* ============================================================
-   HISTORY BACKGROUND — 3D archive timeline + floating docs
+   HISTORY BACKGROUND — 3D archive timeline + scrolling docs
    ============================================================ */
 function HistoryBackground() {
+  const scrollY = useScrollY();
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      {/* 3D Rotating archive cylinder */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ perspective: '1000px' }}>
+      <CircuitBoard />
+      <DataStreams />
+      <PerspectiveGrid />
+      <FloatingParticles count={20} speed={0.8} />
+      <HolographicOverlay />
+
+      {/* 3D Rotating archive cylinder with scroll parallax */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ perspective: '1000px', transform: `translate(-50%, -50%) translateY(${scrollY * 0.06}px)` }}>
         <motion.div
           animate={{ rotateX: [15, 15], rotateY: [0, 360] }}
           transition={{ rotateY: { duration: 50, repeat: Infinity, ease: 'linear' } }}
@@ -537,17 +915,18 @@ function HistoryBackground() {
         className="absolute left-1/2 -translate-x-1/2 w-px top-0 bottom-0"
         style={{
           background: 'linear-gradient(0deg, transparent, rgba(59,130,246,0.08) 20%, rgba(34,211,238,0.08) 80%, transparent)',
+          transform: `translateX(-50%) translateY(${scrollY * 0.02}px)`,
         }}
         animate={{ opacity: [0.5, 1, 0.5] }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* Timeline dots */}
+      {/* Timeline dots with scroll parallax */}
       {Array.from({ length: 8 }).map((_, i) => (
         <motion.div
           key={`timeline-dot-${i}`}
           className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full"
-          style={{ top: `${10 + i * 11}%` }}
+          style={{ top: `${10 + i * 11}%`, transform: `translate(-50%, 0) translateY(${scrollY * (0.02 + i * 0.01)}px)` }}
           animate={{
             scale: [1, 1.5, 1],
             boxShadow: ['0 0 4px rgba(34,211,238,0.2)', '0 0 12px rgba(34,211,238,0.5)', '0 0 4px rgba(34,211,238,0.2)'],
@@ -558,12 +937,16 @@ function HistoryBackground() {
         </motion.div>
       ))}
 
-      {/* Floating document shapes */}
+      {/* Floating document shapes with scroll parallax */}
       {Array.from({ length: 6 }).map((_, i) => (
         <motion.div
           key={`doc-${i}`}
           className="absolute"
-          style={{ left: `${10 + (i * 15) % 80}%`, top: `${10 + (i * 18) % 70}%` }}
+          style={{
+            left: `${10 + (i * 15) % 80}%`,
+            top: `${10 + (i * 18) % 70}%`,
+            transform: `translateY(${scrollY * (0.04 + i * 0.02)}px)`,
+          }}
           animate={{
             y: [0, -25 + i * 3, 0],
             rotateY: [0, 15, -15, 0],
@@ -581,12 +964,6 @@ function HistoryBackground() {
           </svg>
         </motion.div>
       ))}
-
-      {/* Archive grid */}
-      <div className="absolute inset-0 opacity-[0.015]" style={{
-        backgroundImage: 'linear-gradient(90deg, #3B82F6 1px, transparent 1px), linear-gradient(0deg, #3B82F6 1px, transparent 1px)',
-        backgroundSize: '120px 120px',
-      }} />
     </div>
   );
 }
