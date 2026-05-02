@@ -253,14 +253,25 @@
 
 /* Chat bubble styles */
 .chat-bubble-user {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  border-radius: 16px 16px 4px 16px;
+  background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.2);
+}
+
+.chat-bubble-user:hover {
+  box-shadow: 0 2px 16px rgba(59, 130, 246, 0.3);
 }
 
 .chat-bubble-bot {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chat-bubble-bot:hover {
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px 16px 16px 4px;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Auth form glow */
