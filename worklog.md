@@ -147,3 +147,44 @@ Stage Summary:
 - Key new features: markdown rendering, typing dots, copy messages, scroll-to-bottom, suggestion cards with icons, time separators, message grouping
 - All animations using Framer Motion for smooth transitions
 - Maintains cybersecurity theme consistency with cyan/blue gradients
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Add conversation sidebar, history, 8-message limit, and new chat to ChatBot
+
+Work Log:
+- Rewrote store.ts with multi-conversation support:
+  - Added ChatConversation interface (id, title, messages, createdAt, updatedAt)
+  - Added CHAT_MESSAGE_LIMIT constant (8 user messages per conversation)
+  - Added chatConversations, currentChatId, chatSidebarOpen state
+  - Added createNewChat(), switchChat(), deleteChat(), renameChat() actions
+  - Updated sendChatMessage() to work within current conversation, auto-create conv if none, auto-title on first message, enforce limit
+  - Updated clearChat() to clear current conversation
+  - Added localStorage persistence (saveConversations/loadConversations) with date serialization/deserialization
+  - Removed derived getters (chatMessages, chatMessageCount, isChatLimitReached) from state — computed in components instead
+- Completely rewrote ChatBot.tsx with sidebar + conversation features:
+  - Collapsible sidebar (250px) with conversation list, each showing title, relative time, message count (X/8)
+  - New Chat button in sidebar
+  - Delete conversation on hover
+  - Sidebar toggle button in header (PanelLeft/PanelLeftClose icons)
+  - Chat panel width animates from 420px to 680px when sidebar opens
+  - Message limit indicator in header (badge showing X/8 with color coding: normal, warning 6+, limit reached)
+  - Progress bar above input showing message usage
+  - "Chat limit reached" banner with New Chat button when limit hit
+  - Send button becomes New Chat button when limit reached
+  - Input disabled with "Limit reached — start a new chat" placeholder when limit hit
+  - Suggestion cards disabled when limit reached
+  - Conversation count badge on floating button
+  - All conversations persist in localStorage
+- Build succeeded, server restarted
+
+Stage Summary:
+- Full ChatGPT-style conversation system implemented
+- 8 user messages per conversation limit with visual indicators
+- Sidebar shows all past conversations with relative timestamps
+- Conversations persist in localStorage across page refreshes
+- Auto-titling from first message
+- Delete individual conversations
+- New Chat button in sidebar, header, and limit-reached banner
+- Smooth sidebar animation with width transition
