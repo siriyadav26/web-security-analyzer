@@ -94,10 +94,14 @@ function generateTitle(message: string): string {
   return trimmed.slice(0, 37) + '...';
 }
 
-// ─── localStorage persistence ───
-function saveConversations(conversations: ChatConversation[]) {
+// ─── localStorage persistence (per-user) ───
+function getStorageKey(userId: string): string {
+  return `securebot-conversations-${userId}`;
+}
+
+function saveConversations(conversations: ChatConversation[], userId: string) {
+  if (!userId) return;
   try {
-    // Serialize dates to ISO strings for storage
     const serialized = conversations.map(c => ({
       ...c,
       createdAt: c.createdAt.toISOString(),
@@ -107,19 +111,19 @@ function saveConversations(conversations: ChatConversation[]) {
         timestamp: m.timestamp.toISOString(),
       })),
     }));
-    localStorage.setItem('securebot-conversations', JSON.stringify(serialized));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(serialized));
   } catch {
     // Silently fail — localStorage might be full or unavailable
   }
 }
 
-function loadConversations(): ChatConversation[] {
+function loadConversations(userId: string): ChatConversation[] {
+  if (!userId) return [];
   try {
-    const raw = localStorage.getItem('securebot-conversations');
+    const raw = localStorage.getItem(getStorageKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Deserialize ISO strings back to Date objects
     return parsed.map((c: any) => ({
       ...c,
       createdAt: new Date(c.createdAt),
@@ -144,7 +148,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadingStep: 0,
   error: null,
   chatOpen: false,
-  chatConversations: loadConversations(),
+  chatConversations: [],
   currentChatId: null,
   chatLoading: false,
   chatSidebarOpen: false,
@@ -173,15 +177,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const verifyData = await verifyRes.json();
 
+    const userId = verifyData.user?.id || '';
+    const userConversations = loadConversations(userId);
     set({
       isAuthenticated: true,
       user: {
-        id: verifyData.user?.id || '',
+        id: userId,
         email: verifyData.user?.email || email,
         name: verifyData.user?.name || email.split('@')[0],
       },
       view: 'landing',
       error: null,
+      chatConversations: userConversations,
+      currentChatId: userConversations.length > 0 ? userConversations[0].id : null,
     });
 
     try {
@@ -216,6 +224,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       user: { id: data.id, email: data.email, name: data.name },
       view: 'landing',
       error: null,
+      chatConversations: [],
+      currentChatId: null,
     });
 
     try {
@@ -239,6 +249,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       view: 'auth',
       result: null,
       history: [],
+      chatConversations: [],
+      currentChatId: null,
+      chatOpen: false,
     });
   },
 
@@ -315,11 +328,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       updatedAt: now,
     };
     const updated = [newConv, ...get().chatConversations];
+    const userId = get().user?.id || '';
     set({
       chatConversations: updated,
       currentChatId: id,
     });
-    saveConversations(updated);
+    saveConversations(updated, userId);
     return id;
   },
 
@@ -333,11 +347,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newCurrentId = currentChatId === id
       ? (updated.length > 0 ? updated[0].id : null)
       : currentChatId;
+    const userId = get().user?.id || '';
     set({
       chatConversations: updated,
       currentChatId: newCurrentId,
     });
-    saveConversations(updated);
+    saveConversations(updated, userId);
   },
 
   renameChat: (id: string, title: string) => {
@@ -345,8 +360,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = chatConversations.map(c =>
       c.id === id ? { ...c, title, updatedAt: new Date() } : c
     );
+    const userId = get().user?.id || '';
     set({ chatConversations: updated });
-    saveConversations(updated);
+    saveConversations(updated, userId);
   },
 
   sendChatMessage: async (message: string) => {
@@ -385,11 +401,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         : c
     );
 
+    const userId = get().user?.id || '';
     set({
       chatConversations: updatedConvs,
       chatLoading: true,
     });
-    saveConversations(updatedConvs);
+    saveConversations(updatedConvs, userId);
 
     try {
       // Send only last N messages to keep API payload reasonable
@@ -424,7 +441,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         chatConversations: finalConvs,
         chatLoading: false,
       });
-      saveConversations(finalConvs);
+      saveConversations(finalConvs, userId);
     } catch (error) {
       const errorMsg: ChatMessage = {
         id: `msg-${Date.now()}-error`,
@@ -443,7 +460,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         chatConversations: errorConvs,
         chatLoading: false,
       });
-      saveConversations(errorConvs);
+      saveConversations(errorConvs, userId);
     }
   },
 
@@ -456,8 +473,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? { ...c, messages: [], title: 'New Chat', updatedAt: new Date() }
         : c
     );
+    const userId = get().user?.id || '';
     set({ chatConversations: updated });
-    saveConversations(updated);
+    saveConversations(updated, userId);
   },
 }));
 
