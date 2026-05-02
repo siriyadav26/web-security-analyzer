@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import Groq from 'groq-sdk';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -43,13 +43,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const zai = await ZAI.create();
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    const completion = await zai.chat.completions.create({
+    const completion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         ...messages,
       ],
+      model: 'llama3-8b-8192',
       temperature: 0.7,
       max_tokens: 1024,
     });
